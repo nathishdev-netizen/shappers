@@ -1,0 +1,26 @@
+{
+  "name": "shappers-gym-platform",
+  "private": true,
+  "version": "0.1.0",
+  "description": "White-label gym management platform — admin panel + member app (mobile/web) on an open-source stack",
+  "scripts": {
+    "dev:api": "pnpm --filter api run start:dev",
+    "dev:admin": "pnpm --filter admin-web run dev",
+    "dev:mobile": "npm --prefix apps/mobile run start",
+    "seed": "pnpm --filter api run seed",
+    "infra:up": "docker compose -f infra/docker-compose.yml up -d",
+    "infra:down": "docker compose -f infra/docker-compose.yml down"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "prisma",
+      "esbuild",
+      "unrs-resolver"
+    ]
+  }
+}

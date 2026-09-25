@@ -1,0 +1,272 @@
+@import "tailwindcss";
+
+/*
+ * Dark only. Surfaces climb in luminance with elevation, because shadows carry
+ * no contrast on a dark canvas.
+ */
+:root {
+  color-scheme: dark;
+
+  --page: #0a0a0a;
+  --surface: #141414;
+  --surface-raised: #1c1c1c;
+  --surface-sunken: #0f0f0f;
+
+  --ink: #f5f5f5;
+  --ink-secondary: #a3a3a3;
+  --ink-muted: #6b6b6b;
+
+  --hairline: rgba(255, 255, 255, 0.07);
+  --hairline-strong: rgba(255, 255, 255, 0.14);
+  --gridline: #202020;
+  --baseline: #2c2c2c;
+
+  --sidebar: #0f0f0f;
+  --sidebar-hover: rgba(255, 255, 255, 0.05);
+  --sidebar-ink: #8a8a8a;
+
+  /* SHAPER brand red, sampled from the logo (#F00000). White text on red. */
+  --brand: #f00000;
+  --brand-hover: #ff2419;
+  --brand-ink: #ffffff;
+  --brand-soft: rgba(240, 0, 0, 0.13);
+  --brand-glow: rgba(240, 0, 0, 0.38);
+  --brand-on-tint: #ff6b6b;
+
+  /* Charts: emphasis form — muted bars with the brand as the highlight. */
+  --series-1: #f00000;
+  --series-muted: #262626;
+  --series-muted-hover: #333333;
+
+  --status-good: #22c55e;
+  --status-warning: #f59e0b;
+  --status-critical: #ff7a7a;
+  --status-good-text: #4ade80;
+
+  --shadow-card: none;
+  --shadow-raised: 0 20px 50px rgba(0, 0, 0, 0.6);
+}
+
+@theme inline {
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-ink: var(--ink);
+  --color-ink-secondary: var(--ink-secondary);
+  --color-ink-muted: var(--ink-muted);
+  --color-hairline: var(--hairline);
+  --color-brand: var(--brand);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html,
+body {
+  background: var(--page);
+  color: var(--ink);
+}
+
+body {
+  font-family: var(--font-geist-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--brand) 30%, transparent);
+}
+
+.recharts-wrapper svg:focus,
+.recharts-surface:focus {
+  outline: none;
+}
+
+/* Oversized stat figures: proportional digits, tightened tracking. */
+.stat-figure {
+  font-variant-numeric: proportional-nums;
+  letter-spacing: -0.03em;
+}
+
+/* Shared primitives, so every screen speaks the same language. */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 18px;
+  box-shadow: var(--shadow-card);
+}
+
+.btn-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 9999px;
+  background: var(--brand);
+  color: var(--brand-ink);
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  transition: background-color 120ms ease, transform 120ms ease;
+}
+.btn-brand:hover { background: var(--brand-hover); }
+.btn-brand:active { transform: translateY(1px); }
+.btn-brand:disabled { opacity: 0.5; pointer-events: none; }
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 9999px;
+  border: 1px solid var(--hairline-strong);
+  color: var(--ink-secondary);
+  padding: 0.5rem 0.9rem;
+  font-size: 0.875rem;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.btn-ghost:hover { background: var(--surface-raised); color: var(--ink); }
+
+.field {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--hairline);
+  background: var(--surface-sunken);
+  padding: 0.55rem 0.8rem;
+  font-size: 0.875rem;
+  color: var(--ink);
+  outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.field:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+.field::placeholder { color: var(--ink-muted); }
+select.field option { background: var(--surface-raised); color: var(--ink); }
+
+.pill-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 9999px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--hairline);
+}
+.pill-tab {
+  border-radius: 9999px;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--ink-secondary);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.pill-tab[aria-selected="true"] {
+  background: var(--brand);
+  color: var(--brand-ink);
+  font-weight: 600;
+}
+
+.table-row {
+  border-bottom: 1px solid var(--hairline);
+  transition: background-color 100ms ease;
+}
+.table-row:last-child { border-bottom: 0; }
+.table-row:hover { background: var(--surface-raised); }
+
+/* Soft brand glow behind hero numbers / rings. */
+.glow-brand {
+  box-shadow: 0 0 60px -12px var(--brand-glow);
+}
+
+/*
+ * Ambient depth. The reference dashboards are never flat black — a warm haze
+ * bleeds in from a corner. Two blurred orbs + a faint grain, fixed behind content.
+ */
+.ambient {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+.ambient::before,
+.ambient::after {
+  content: "";
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(90px);
+  opacity: 0.55;
+}
+.ambient::before {
+  width: 640px; height: 640px; right: -180px; top: -220px;
+  background: radial-gradient(closest-side, var(--brand-glow), transparent 70%);
+}
+.ambient::after {
+  width: 520px; height: 520px; left: 140px; bottom: -260px;
+  background: radial-gradient(closest-side, rgba(240, 0, 0, 0.14), transparent 70%);
+}
+
+.grain {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Card with a gradient hairline — brighter at the top-left, like light hitting an edge. */
+.card-glass {
+  position: relative;
+  border-radius: 20px;
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.03) 40%, rgba(240,0,0,0.20)) border-box;
+  border: 1px solid transparent;
+}
+
+/* Hero card: brand-tinted surface with an inner glow, for the one number a screen leads with. */
+.card-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 22px;
+  border: 1px solid rgba(240, 0, 0, 0.30);
+  background:
+    radial-gradient(120% 90% at 100% 0%, rgba(240, 0, 0, 0.26), transparent 55%),
+    linear-gradient(180deg, #1a1011, #121010);
+}
+
+/* Cursor spotlight: a radial glow that follows the pointer across a card. */
+.spotlight {
+  position: relative;
+  overflow: hidden;
+}
+.spotlight::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 250ms ease;
+  background: radial-gradient(360px circle at var(--mx, 50%) var(--my, 50%), rgba(240, 0, 0, 0.13), transparent 45%);
+}
+.spotlight:hover::before { opacity: 1; }
+
+/* Skeleton shimmer while data loads. */
+@keyframes shimmer { from { background-position: -600px 0; } to { background-position: 600px 0; } }
+.skeleton {
+  border-radius: 12px;
+  background: linear-gradient(90deg, var(--surface) 25%, var(--surface-raised) 50%, var(--surface) 75%);
+  background-size: 1200px 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+/* Tiny unit label that sits beside an oversized figure. */
+.unit { font-size: 0.7rem; font-weight: 500; color: var(--ink-muted); letter-spacing: 0.02em; }
+
+/* Echoes the logo's chiselled, all-caps wordmark. */
+.brand-eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-weight: 700;
+  font-size: 0.6875rem;
+  color: var(--brand);
+}
