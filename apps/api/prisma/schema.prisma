@@ -4,7 +4,14 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  // Pooled connection (Supabase port 6543 / pgbouncer). Serverless functions each
+  // open their own connection, so an unpooled URL exhausts the database's limit
+  // within a few requests.
   url      = env("DATABASE_URL")
+  // Migrations need a direct connection (Supabase port 5432): pgbouncer runs in
+  // transaction mode and cannot execute the advisory locks and DDL Prisma uses.
+  // Falls back to DATABASE_URL locally, where there is no pooler.
+  directUrl = env("DIRECT_URL")
 }
 
 enum StaffRole {

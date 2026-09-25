@@ -1,118 +1,95 @@
 # Deploying SHAPER
 
-Three services, all on free tiers:
+Two accounts, one domain:
 
-| Piece | Host | What it serves |
+| Piece | Host | Notes |
 |---|---|---|
-| Web console (Next.js) | Vercel | the site your client opens |
-| API (NestJS) | Railway or Render | every request the site makes |
-| PostgreSQL | Neon | the demo data |
+| PostgreSQL | **Supabase** | free tier, always available |
+| Web + API | **Vercel** | one project, one URL, via [Services](https://vercel.com/docs/services) |
 
-Deploy them in that order — **database → API → web** — because each needs the URL of
-the one before it.
+`vercel.json` at the repo root declares both halves as services, so
+`https://your-app.vercel.app` serves the site and `/api/*` reaches the NestJS
+server. They share an origin, which means **there is no CORS to configure**.
+
+> Vercel Services is in beta and may need enabling on your account. If it is not
+> available, see [Fallback](#fallback-api-on-railway) at the bottom — the same
+> Docker image runs on Railway or Render unchanged.
 
 ---
 
-## 0. Push the repo
+## 1. Database — Supabase
 
-Vercel and Railway both deploy from GitHub.
+1. Create a project at [supabase.com](https://supabase.com). Save the database
+   password it generates; you cannot read it back later.
+2. **Project Settings → Database → Connection string → URI**, and copy two of them:
+
+   | Which | Port | Used for |
+   |---|---|---|
+   | **Transaction pooler** | `6543` | `DATABASE_URL` — every normal query |
+   | **Direct connection** | `5432` | `DIRECT_URL` — migrations only |
+
+Both are needed, and the distinction matters:
+
+- Serverless containers each open their own connection, so the **pooled** URL is
+  what keeps Postgres from running out of connections under load.
+- Migrations need the **direct** URL: the pooler runs in transaction mode and
+  cannot execute the advisory locks and DDL that Prisma migrations use.
+
+Append `?pgbouncer=true&connection_limit=1` to the pooled URL.
+
+---
+
+## 2. Web + API — Vercel
+
+Import `nathishdev-netizen/shappers` at [vercel.com/new](https://vercel.com/new).
+Leave the root directory as the repository root — the root `vercel.json` handles
+the rest.
+
+Environment variables:
+
+| Name | Value |
+|---|---|
+| `DATABASE_URL` | Supabase pooled URL (port 6543) |
+| `DIRECT_URL` | Supabase direct URL (port 5432) |
+| `JWT_ACCESS_SECRET` | `openssl rand -base64 32` |
+| `JWT_ACCESS_EXPIRES_IN` | `12h` |
+| `NEXT_PUBLIC_API_URL` | `/api` |
+
+`NEXT_PUBLIC_API_URL` is a **relative** path on purpose: the API is served from
+the same domain, so the browser calls `/api/...` with no cross-origin request at
+all. It is also inlined at build time, so changing it later needs a redeploy
+rather than a restart.
+
+Deploy. The API container runs `prisma migrate deploy` on boot, so the Supabase
+schema is created automatically.
+
+### Check it
 
 ```bash
-cd ~/Desktop/Nathish/explore/shappers
-gh repo create shappers --private --source=. --push
-```
-
-`.env` files are gitignored, so no secrets leave your machine. You will set each
-secret in the hosting dashboards instead.
-
----
-
-## 1. Database — Neon
-
-1. Create a project at [neon.tech](https://neon.tech) (region: closest to your client).
-2. Copy the **pooled** connection string. It looks like:
-   `postgresql://user:pass@ep-xxx-pooler.region.aws.neon.tech/neondb?sslmode=require`
-
-Use the **pooled** one (`-pooler` in the host). The direct URL runs out of
-connections under even light demo traffic.
-
----
-
-## 2. API — Railway
-
-1. New project at [railway.app](https://railway.app) → *Deploy from GitHub repo*.
-2. Settings → **Dockerfile path**: `apps/api/Dockerfile`
-   (leave the root directory as the repo root — pnpm needs the workspace manifest).
-3. Variables:
-
-   | Name | Value |
-   |---|---|
-   | `DATABASE_URL` | the Neon pooled string from step 1 |
-   | `JWT_ACCESS_SECRET` | a long random string — generate with `openssl rand -base64 32` |
-   | `JWT_ACCESS_EXPIRES_IN` | `12h` |
-   | `CORS_ORIGIN` | leave unset for now; set it in step 4 |
-
-4. Deploy, then **Settings → Networking → Generate Domain**.
-
-The container runs `prisma migrate deploy` on boot, so the schema is created
-automatically. Check it is alive:
-
-```bash
-curl -i https://<your-api>.up.railway.app/api/auth/login \
+curl -i https://<your-app>.vercel.app/api/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"subdomain":"x","email":"x@y.z","password":"x"}'
 ```
 
-A **401** is the correct answer — it means the API and database are talking. A 502
-or a timeout means the service did not boot; check the deploy logs.
+A **401** is the correct answer — it proves the API booted and reached the
+database. A 404 means the rewrite is not matching; a 500 means the database
+variables are wrong.
 
-### Seed the demo data
+---
 
-The hosted database starts empty. From your Mac, pointing at Neon:
+## 3. Seed the demo data
+
+Supabase starts empty. From your Mac, pointed at it:
 
 ```bash
 cd apps/api
-DATABASE_URL='<neon pooled url>' pnpm run seed
+DATABASE_URL='<pooled url>' DIRECT_URL='<direct url>' pnpm run seed
 ```
 
-This creates the SHAPER club, 28 members, staff, plans, payments and attendance.
-Re-running it is safe — it deletes and recreates the demo tenants only.
+That creates the club, 28 members, staff, plans, payments and attendance.
+Re-running is safe — it only deletes and recreates the demo tenants.
 
----
-
-## 3. Web — Vercel
-
-1. [vercel.com](https://vercel.com) → *Add New Project* → import the repo.
-2. **Root Directory**: `apps/admin-web`
-3. Environment variable:
-
-   | Name | Value |
-   |---|---|
-   | `NEXT_PUBLIC_API_URL` | `https://<your-api>.up.railway.app/api` |
-
-   The `/api` suffix matters — the server sets that global prefix.
-
-4. Deploy.
-
-`NEXT_PUBLIC_*` values are baked in at build time, so **changing this later needs a
-redeploy**, not just a restart.
-
----
-
-## 4. Lock down CORS
-
-Back in Railway, set `CORS_ORIGIN` to your Vercel URL:
-
-```
-CORS_ORIGIN=https://shappers.vercel.app
-```
-
-Unset, the API accepts requests from any origin — fine while wiring things up,
-worth closing once the domain is known. Redeploy the API after changing it.
-
----
-
-## Sign in
+Then sign in:
 
 ```
 subdomain  shaper
@@ -120,36 +97,47 @@ email      owner@shaper.fit
 password   Password123!
 ```
 
-The site installs to a phone home screen too: open it in the phone browser and
-choose **Add to Home Screen**.
-
 ---
 
-## Updating the Android app
+## 4. Point the Android app at it
 
-The APK has its API URL compiled in, so pointing it at the hosted API means a
+The APK has its API URL compiled in, so switching it to the hosted API is a
 rebuild:
 
 ```bash
 cd apps/mobile/android
-EXPO_PUBLIC_API_URL="https://<your-api>.up.railway.app/api" \
-  ./gradlew assembleRelease
+EXPO_PUBLIC_API_URL="https://<your-app>.vercel.app/api" ./gradlew assembleRelease
 ```
 
 Output: `app/build/outputs/apk/release/app-release.apk`.
 
-Once the API is on HTTPS you can drop the cleartext allowance from `app.json`
-(`expo-build-properties` → `usesCleartextTraffic`), since it only exists to permit
-plain-HTTP traffic to a laptop on the local network.
+Because the hosted API is HTTPS, you can now drop the cleartext allowance from
+`apps/mobile/app.json` (`expo-build-properties` → `usesCleartextTraffic`). It
+only ever existed to permit plain-HTTP traffic to a laptop on the local network.
 
 ---
 
-## Costs
+## Fallback: API on Railway
 
-Free tiers cover a demo. The limits that actually bite:
+If Services is unavailable, run the web app on Vercel by itself and put the API
+on Railway with the same Dockerfile:
 
-- **Neon** free databases suspend after inactivity; the first request afterwards
-  takes a few seconds to wake. Open the site once before a client walks in.
-- **Railway** free usage is metered per month and the service sleeps when it runs
-  out.
-- **Vercel** is generous for this kind of traffic.
+1. Railway → *Deploy from GitHub repo* → **Root Directory**: `apps/api`
+   (the Dockerfile is self-contained and builds from that folder).
+2. Set `DATABASE_URL`, `DIRECT_URL`, `JWT_ACCESS_SECRET`, `JWT_ACCESS_EXPIRES_IN`.
+3. Generate a domain.
+4. On Vercel set `NEXT_PUBLIC_API_URL` to `https://<railway-domain>/api` — an
+   absolute URL this time, since the origins now differ.
+5. Set `CORS_ORIGIN` on Railway to your Vercel URL, because cross-origin requests
+   now need to be allowed explicitly.
+
+---
+
+## Costs and gotchas
+
+- **Supabase** free projects pause after a week of inactivity; opening the
+  dashboard wakes them. Check it the day before a demo.
+- **Vercel** container services consume build minutes; the free tier is fine for
+  a demo but not for constant redeploys.
+- The seed wipes and recreates the demo tenants, so never point it at a database
+  holding anything real.
