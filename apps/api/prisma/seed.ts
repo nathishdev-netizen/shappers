@@ -21,17 +21,34 @@ import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
-const FIRST_NAMES = [
-  'Aarav', 'Diya', 'Rohan', 'Ananya', 'Vikram', 'Meera', 'Arjun', 'Kavya',
-  'Karan', 'Priya', 'Nikhil', 'Sneha', 'Rahul', 'Isha', 'Aditya', 'Neha',
-  'Siddharth', 'Tara', 'Manish', 'Pooja', 'Varun', 'Riya', 'Sameer', 'Lakshmi',
-  'Dev', 'Anjali', 'Yash', 'Nisha',
+/**
+ * The demo roster, named rather than generated: a handful of real-looking
+ * members reads better in a walkthrough than a wall of synthetic rows, and the
+ * spread below deliberately covers every access state the UI can show.
+ */
+type MemberState = 'ACTIVE' | 'EXPIRING' | 'OVERDUE' | 'FROZEN' | 'CANCELLED';
+
+const MEMBER_SEEDS: {
+  name: string;
+  /** Index into the plan list: 0 Monthly, 1 Quarterly, 2 Annual, 3 Off-Peak. */
+  plan: number;
+  state: MemberState;
+  /** Days since joining, which also decides how much history they have. */
+  joined: number;
+}[] = [
+  { name: 'Nathish',  plan: 0, state: 'ACTIVE',    joined: 42 },
+  { name: 'Sabaresh', plan: 1, state: 'ACTIVE',    joined: 128 },
+  { name: 'Kishore',  plan: 0, state: 'EXPIRING',  joined: 64 },
+  { name: 'Kumar',    plan: 0, state: 'OVERDUE',   joined: 96 },
+  { name: 'Abdul',    plan: 2, state: 'ACTIVE',    joined: 210 },
+  { name: 'Yogesh',   plan: 1, state: 'FROZEN',    joined: 155 },
+  { name: 'Krithik',  plan: 3, state: 'ACTIVE',    joined: 4 },
+  { name: 'Ram',      plan: 0, state: 'CANCELLED', joined: 185 },
+  { name: 'Prasad',   plan: 1, state: 'ACTIVE',    joined: 72 },
 ];
 
-const LAST_NAMES = [
-  'Sharma', 'Patel', 'Reddy', 'Nair', 'Iyer', 'Menon', 'Kapoor', 'Desai',
-  'Joshi', 'Rao', 'Gupta', 'Malhotra', 'Chopra', 'Verma',
-];
+/** Used only for emergency-contact names, so they read as relatives. */
+const KIN_NAMES = ['Meena', 'Arun', 'Latha', 'Suresh', 'Divya', 'Karthik', 'Anitha', 'Vimal'];
 
 const GENDERS = [Gender.MALE, Gender.FEMALE, Gender.FEMALE, Gender.MALE, Gender.PREFER_NOT_TO_SAY];
 const CONTACT_METHODS = [
@@ -166,18 +183,18 @@ async function main() {
           },
           {
             id: MANAGER_ID,
-            email: 'manager@shaper.fit',
+            email: 'prethive@shaper.fit',
             passwordHash,
-            firstName: 'Priya',
-            lastName: 'Sharma',
-            role: StaffRole.ADMIN,
+            firstName: 'Prethive',
+            lastName: '',
+            role: StaffRole.TRAINER,
           },
           {
             id: COACH_ID,
-            email: 'coach@shaper.fit',
+            email: 'sagar@shaper.fit',
             passwordHash,
-            firstName: 'Dev',
-            lastName: 'Kapoor',
+            firstName: 'Sagar',
+            lastName: '',
             role: StaffRole.TRAINER,
           },
         ],
@@ -218,8 +235,9 @@ async function main() {
     include: { membershipPlans: true, users: true },
   });
 
-  const manager = tenant.users.find((u) => u.role === StaffRole.ADMIN)!;
-  const trainer = tenant.users.find((u) => u.role === StaffRole.TRAINER)!;
+  // The owner doubles as the note author; the club has no separate admin.
+  const manager = tenant.users.find((u) => u.role === StaffRole.OWNER)!;
+  const [prethive, sagar] = tenant.users.filter((u) => u.role === StaffRole.TRAINER);
   const plans = tenant.membershipPlans;
 
   // Two branches — the network view needs somewhere for members and staff to belong.
@@ -238,33 +256,28 @@ async function main() {
     }),
   ]);
 
-  // A second trainer so assignment and PT agendas have more than one name.
-  const trainer2 = await prisma.user.create({
-    data: {
-      tenantId: tenant.id, email: 'anita@shaper.fit', passwordHash, firstName: 'Anita', lastName: 'Rao',
-      role: StaffRole.TRAINER, specialty: 'Strength & conditioning', phone: '+91-98450-11223', branchId: eastBranch.id,
-    },
+  await prisma.user.update({
+    where: { id: sagar.id },
+    data: { specialty: 'Functional training, rehab', phone: '+91-98450-11224', branchId: hqBranch.id },
   });
-  await prisma.user.update({ where: { id: trainer.id }, data: { specialty: 'Functional training, rehab', phone: '+91-98450-11224', branchId: hqBranch.id } });
+  await prisma.user.update({
+    where: { id: prethive.id },
+    data: { specialty: 'Strength & conditioning', phone: '+91-98450-11223', branchId: eastBranch.id },
+  });
   await prisma.user.update({ where: { id: manager.id }, data: { branchId: hqBranch.id, phone: '+91-98450-11225' } });
-  const trainers = [trainer, trainer2];
-  // Weighted so the distribution chart has a clear shape rather than a flat tie.
-  const planWeights = [0, 0, 0, 0, 0, 1, 1, 1, 2, 3];
-
+  const trainers = [sagar, prethive];
   const memberIds: string[] = [];
   const joinedDaysAgoById = new Map<string, number>();
-  for (let i = 0; i < 28; i++) {
+  for (let i = 0; i < MEMBER_SEEDS.length; i++) {
     // PT members are every third member, so indexing their sessions off `i` steps by 3
     // and collapses every modulo cycle — one trainer, one focus, two time slots.
     // `k` steps by 1 across just the PT members, so the agenda actually varies.
     const k = i / 3;
-    const firstName = pick(FIRST_NAMES, i);
-    const lastName = pick(LAST_NAMES, i * 3 + 1);
-    const plan = plans[planWeights[i % planWeights.length]];
-
-    // The first few members joined within the last week, so the "new sign-ups"
-    // chart has something to plot; the rest spread back over about five months.
-    const joinedDaysAgo = i < 6 ? 1 + i : 5 + ((i * 17) % 160);
+    const seed = MEMBER_SEEDS[i];
+    const { name: firstName, state } = seed;
+    const lastName = '';
+    const plan = plans[seed.plan];
+    const joinedDaysAgo = seed.joined;
 
     // The current period has to be a real cycle of the plan's length, or "days left"
     // and the progress meter divide by the wrong denominator — a monthly member who
@@ -277,9 +290,8 @@ async function main() {
       : 30;
     const periodsElapsed = Math.floor(joinedDaysAgo / cycleDays);
 
-    // Only someone who has already completed a cycle can be behind on payment.
-    const isOverdue = i % 9 === 0 && periodsElapsed >= 1;
-    const isCancelled = i % 13 === 0 && !isOverdue;
+    const isOverdue = state === 'OVERDUE';
+    const isCancelled = state === 'CANCELLED';
 
     const status = isOverdue
       ? SubscriptionStatus.PAST_DUE
@@ -290,7 +302,11 @@ async function main() {
     // The latest whole cycle since joining. For an overdue member it is the one
     // before that, so the period has already lapsed.
     const latestStartDaysAgo = joinedDaysAgo - periodsElapsed * cycleDays;
-    const periodStartDaysAgo = isOverdue ? latestStartDaysAgo + cycleDays : latestStartDaysAgo;
+    // EXPIRING shifts the window so it ends in a few days, which is what drives
+    // the "renewals to chase" list.
+    const expiringShift = state === 'EXPIRING' ? cycleDays - latestStartDaysAgo - 4 : 0;
+    const periodStartDaysAgo =
+      (isOverdue ? latestStartDaysAgo + cycleDays : latestStartDaysAgo) + expiringShift;
     const periodEndDaysAgo = periodStartDaysAgo - cycleDays;
     const periodEnd = daysAgo(periodEndDaysAgo);
 
@@ -301,7 +317,7 @@ async function main() {
         tenantId: tenant.id,
         firstName,
         lastName,
-        email: `${firstName.toLowerCase()}.${lastName.toLowerCase()}${i}@example.com`,
+        email: `${firstName.toLowerCase()}${i}@example.com`,
         phone: `+91-9${String(100000000 + i * 7654321).slice(0, 9)}`,
         alternatePhone: i % 4 === 0 ? `+91-8${String(200000000 + i * 1234567).slice(0, 9)}` : null,
         dateOfBirth: new Date(1978 + (i % 25), i % 12, 1 + (i % 27)),
@@ -316,7 +332,7 @@ async function main() {
         idProofType: pick(ID_PROOF_TYPES, i),
         idProofLast4: String(1000 + ((i * 7919) % 9000)),
 
-        emergencyName: `${pick(FIRST_NAMES, i + 9)} ${lastName}`,
+        emergencyName: pick(KIN_NAMES, i),
         emergencyRelationship: pick(RELATIONSHIPS, i),
         emergencyPhone: `+91-7${String(300000000 + i * 2345678).slice(0, 9)}`,
 
@@ -448,16 +464,15 @@ async function main() {
       });
     }
 
-    // A couple of members on a medical/travel hold, to exercise the freeze path.
-    // Only members who have been around long enough for a hold to make sense.
-    if (i % 14 === 0 && joinedDaysAgo > 20) {
+    // The member marked FROZEN is on a hold, which exercises that access path.
+    if (state === 'FROZEN') {
       await prisma.subscriptionFreeze.create({
         data: {
           subscriptionId: member.subscriptions[0].id,
           startDate: daysAgo(6),
           endDate: daysAgo(-12),
-          reason: i % 28 === 0 ? FreezeReason.MEDICAL : FreezeReason.TRAVEL,
-          note: i % 28 === 0 ? 'Knee rehab — cleared to return next month' : 'Overseas for work',
+          reason: FreezeReason.MEDICAL,
+          note: 'Knee rehab — cleared to return next month',
         },
       });
     }
@@ -532,24 +547,32 @@ async function main() {
   for (let d = 69; d >= 0; d--) {
     const day = daysAgo(d);
     const isWeekend = day.getDay() === 0 || day.getDay() === 6;
-    const visits = isWeekend ? 6 + (d % 4) : 12 + (d % 7);
-
-    for (let v = 0; v < visits; v++) {
-      const memberId = memberIds[(d * 7 + v * 3) % memberIds.length];
-      if (d < 21 && lapsedMemberIds.has(memberId)) continue;
+    // Walk the roster and decide whether each member trained that day, rather
+    // than drawing N visits from the list: drawing repeated the same member
+    // several times a day once the roster was small, which showed up as one
+    // person checking in six times and "43 visits in 30 days".
+    memberIds.forEach((memberId, idx) => {
+      if (d < 21 && lapsedMemberIds.has(memberId)) return;
       // Nobody checks in before they joined.
-      if (d > (joinedDaysAgoById.get(memberId) ?? 0)) continue;
+      if (d > (joinedDaysAgoById.get(memberId) ?? 0)) return;
+
+      // Each member keeps their own cadence — every 2nd, 3rd or 4th day — so
+      // the attendance chart has texture instead of a flat line.
+      const everyNDays = 2 + (idx % 3);
+      if ((d + idx) % everyNDays !== 0) return;
+      // Weekends are quieter: only half the usual crowd turns up.
+      if (isWeekend && (d + idx) % 2 !== 0) return;
 
       const checkedInAt = new Date(day);
-      checkedInAt.setHours(6 + ((v * 3) % 15), (v * 13) % 60, 0, 0);
+      checkedInAt.setHours(6 + ((idx * 5 + d) % 14), (idx * 17) % 60, 0, 0);
 
       attendanceRows.push({
         tenantId: tenant.id,
         memberId,
-        source: pick(sources, v + d),
+        source: pick(sources, idx + d),
         checkedInAt,
       });
-    }
+    });
   }
 
   await prisma.attendanceEvent.createMany({ data: attendanceRows });
@@ -638,7 +661,7 @@ async function main() {
   console.log(`Seed complete.
   Tenant 1: subdomain "shaper"      · owner@shaper.fit     · Password123!  (SHAPER red, ${memberIds.length} members)
   Tenant 2: subdomain "iron-house"  · owner@iron-house.com · Password123!  (blue brand, empty — proves isolation)
-  Staff roles seeded: OWNER, ADMIN, TRAINER (manager@ / coach@shaper.fit)`);
+  Staff: Nathish (owner) · Prethive & Sagar (trainers) — prethive@ / sagar@shaper.fit`);
 }
 
 main()
