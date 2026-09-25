@@ -17,3 +17,5 @@ coverage/
 pnpm-lock.yaml.bak
 infra/pgdata/
 infra/miniodata/
+.vercel
+.env*
