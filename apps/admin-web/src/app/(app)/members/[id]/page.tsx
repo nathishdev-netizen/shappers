@@ -1,11 +1,12 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft, Phone, Mail, MapPin, Briefcase, Cake, IdCard, HeartPulse, AlertTriangle,
   ShieldCheck, Dumbbell, Target, Ruler, StickyNote, CalendarClock, Snowflake, Wallet,
   TrendingDown, TrendingUp, Clock, CheckCircle2, XCircle, CreditCard, UserRound, Pin,
+  ScanLine, Check,
 } from "lucide-react";
 import { api, type MemberDetailDto, type TimelineEvent } from "@/lib/api";
 import { formatCurrency, formatDate, initials } from "@/lib/format";
@@ -25,9 +26,11 @@ export default function MemberProfilePage({ params }: PageProps<"/members/[id]">
   const [payOpen, setPayOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     api.getMember(id).then(setMember).catch(() => setNotFound(true));
   }, [id]);
+
+  useEffect(() => { load(); }, [load]);
 
   if (notFound) {
     return (
@@ -49,7 +52,15 @@ export default function MemberProfilePage({ params }: PageProps<"/members/[id]">
 
   return (
     <>
-      <MemberHeader member={member} onRecordPayment={() => setPayOpen(true)} />
+      <MemberHeader
+        member={member}
+        onRecordPayment={() => setPayOpen(true)}
+        onCheckedIn={(msg) => {
+          setToast(msg);
+          setTimeout(() => setToast(null), 3000);
+          load();
+        }}
+      />
       <RecordPaymentDrawer member={member} open={payOpen} onClose={() => setPayOpen(false)} onDone={async (msg) => {
         setPayOpen(false); setToast(msg); setTimeout(() => setToast(null), 3000);
         setMember(await api.getMember(member.id));
@@ -89,7 +100,13 @@ export default function MemberProfilePage({ params }: PageProps<"/members/[id]">
 }
 
 /** Header carries the two questions staff ask first: can they get in, and are they slipping away. */
-function MemberHeader({ member, onRecordPayment }: { member: MemberDetailDto; onRecordPayment: () => void }) {
+function MemberHeader({
+  member, onRecordPayment, onCheckedIn,
+}: {
+  member: MemberDetailDto;
+  onRecordPayment: () => void;
+  onCheckedIn: (msg: string) => void;
+}) {
   const meta = accessMeta(member.access.reason);
   const { daysRemaining } = member.access;
 
@@ -170,9 +187,101 @@ function MemberHeader({ member, onRecordPayment }: { member: MemberDetailDto; on
               <button onClick={onRecordPayment} className="btn-brand !py-1 !px-3 !text-xs">Record payment</button>
             </div>
           )}
+
+          <CheckInPanel member={member} onCheckedIn={onCheckedIn} />
         </div>
       </div>
     </header>
+  );
+}
+
+/**
+ * Check-in where the member already is, rather than back on the attendance list.
+ * Shows the three things a receptionist needs before waving someone through —
+ * how long they have left, when they last came, how often lately — so the
+ * decision and the action are in the same place.
+ */
+function CheckInPanel({
+  member, onCheckedIn,
+}: { member: MemberDetailDto; onCheckedIn: (msg: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // The API returns today's events already; a second tap would just log a duplicate.
+  const today = new Date().toDateString();
+  const alreadyIn = member.attendanceEvents.some(
+    (e) => new Date(e.checkedInAt).toDateString() === today,
+  );
+
+  async function checkIn() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.checkIn(member.id);
+      onCheckedIn(`${member.firstName} checked in`);
+      setConfirming(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Check-in failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const since = member.visits.daysSinceLastVisit;
+
+  return (
+    <div className="mt-2.5 border-t border-hairline pt-3">
+      <div className="flex items-center justify-between gap-3 text-xs text-ink-secondary">
+        <span>
+          Last visit{" "}
+          <strong className="font-semibold text-ink">
+            {since === null ? "never" : since === 0 ? "today" : `${since}d ago`}
+          </strong>
+        </span>
+        <span>
+          <strong className="font-semibold text-ink">{member.visits.visitsLast30}</strong> visits / 30d
+        </span>
+      </div>
+
+      {error && (
+        <p className="mt-2 text-xs" style={{ color: "var(--status-critical)" }}>{error}</p>
+      )}
+
+      {alreadyIn ? (
+        <p
+          className="mt-3 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-semibold"
+          style={{ backgroundColor: "color-mix(in srgb, var(--status-good) 12%, transparent)", color: "var(--status-good)" }}
+        >
+          <Check size={14} strokeWidth={2.6} />
+          Already checked in today
+        </p>
+      ) : confirming ? (
+        // Access is blocked, so make the override deliberate rather than a reflex.
+        <div className="mt-3">
+          <p className="text-xs" style={{ color: "var(--status-critical)" }}>
+            Membership is {member.access.reason.toLowerCase().replace(/_/g, " ")}. Check in anyway?
+          </p>
+          <div className="mt-2 flex gap-2">
+            <button onClick={checkIn} disabled={busy} className="btn-brand !py-1.5 !px-3 !text-xs">
+              {busy ? "Checking in…" : "Yes, check in"}
+            </button>
+            <button onClick={() => setConfirming(false)} className="btn-ghost !py-1.5 !px-3 !text-xs">
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={() => (member.access.allowed ? checkIn() : setConfirming(true))}
+          disabled={busy}
+          className="btn-brand mt-3 flex w-full items-center justify-center gap-2 !py-2 !text-xs"
+        >
+          <ScanLine size={14} strokeWidth={2.4} />
+          {busy ? "Checking in…" : "Check in"}
+        </button>
+      )}
+    </div>
   );
 }
 
