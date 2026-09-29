@@ -1,5 +1,8 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000/api";
 
+/** Surfaced in error states, so a build pointed at the wrong API is diagnosable. */
+export const apiBaseUrl = API_URL;
+
 export interface AuthUser {
   userId: string;
   tenantId: string;

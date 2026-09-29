@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight } from "lucide-react";
-import { api, setToken } from "@/lib/api";
+import { api, ApiError, apiBaseUrl, setToken } from "@/lib/api";
 
 const DEMO_TENANTS = [
   { subdomain: "shaper", label: "SHAPER Elite Fitness Studio", email: "owner@shaper.fit", hex: "#f00000" },
@@ -31,8 +31,17 @@ export default function LoginPage() {
       setToken(accessToken);
       localStorage.setItem("shappers_user", JSON.stringify(user));
       router.push("/dashboard");
-    } catch {
-      setError("Those credentials didn't work. Check the subdomain and try again.");
+    } catch (err) {
+      // A rejected password and an unreachable server are different problems.
+      // Blaming the credentials for a network fault sends people to re-type a
+      // password that was never wrong — and hides that the app is pointed at an
+      // API it cannot see, which is what a stale build or old URL looks like.
+      const rejected = err instanceof ApiError && (err.status === 401 || err.status === 400);
+      setError(
+        rejected
+          ? "Those credentials didn't work. Check the subdomain and try again."
+          : `Can't reach the server at ${apiBaseUrl}. If this is an old tab, reload the page.`,
+      );
       setLoading(false);
     }
   }
