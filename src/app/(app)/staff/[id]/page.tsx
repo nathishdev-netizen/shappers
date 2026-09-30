@@ -6,7 +6,8 @@ import {
   ArrowLeft, Phone, Mail, MapPin, Users, CalendarDays, Salad, CheckCircle2,
   XCircle, Clock, TrendingDown, ChevronRight, UserPlus,
 } from "lucide-react";
-import { api, type StaffDetailDto } from "@/lib/api";
+import { createClient } from "@/lib/supabase/client";
+import { getStaffDetail, type StaffDetail } from "@/lib/insights/staff";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { AccessPill, ChurnPill } from "@/components/access-badge";
 import { Reveal, Item, Page, CountUp, Bar, Spotlight } from "@/components/motion";
@@ -18,12 +19,12 @@ const humanize = (s: string | null) =>
 
 export default function StaffDetailPage({ params }: PageProps<"/staff/[id]">) {
   const { id } = use(params);
-  const [staff, setStaff] = useState<StaffDetailDto | null>(null);
+  const [staff, setStaff] = useState<StaffDetail | null>(null);
   const [tab, setTab] = useState<Tab>("clients");
   const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
-    api.getStaffMember(id).then(setStaff).catch(() => setNotFound(true));
+    getStaffDetail(createClient(), id).then(setStaff).catch(() => setNotFound(true));
   }, [id]);
 
   if (notFound) {
@@ -45,8 +46,8 @@ export default function StaffDetailPage({ params }: PageProps<"/staff/[id]">) {
   }
 
   const s = staff.stats;
-  const upcoming = staff.sessions.filter((x) => x.status === "SCHEDULED" && new Date(x.scheduledAt) >= new Date());
-  const past = staff.sessions.filter((x) => x.status !== "SCHEDULED" || new Date(x.scheduledAt) < new Date());
+  const upcoming = staff.sessions.filter((x) => x.status === "SCHEDULED" && new Date(x.scheduled_at) >= new Date());
+  const past = staff.sessions.filter((x) => x.status !== "SCHEDULED" || new Date(x.scheduled_at) < new Date());
   const showRate = s.sessionsCompleted + s.noShows > 0
     ? s.sessionsCompleted / (s.sessionsCompleted + s.noShows)
     : 1;
@@ -61,10 +62,10 @@ export default function StaffDetailPage({ params }: PageProps<"/staff/[id]">) {
 
         <div className="flex flex-wrap items-start justify-between gap-6">
           <div className="flex items-center gap-4">
-            <Avatar first={staff.firstName} last={staff.lastName} size={64} />
+            <Avatar first={staff.first_name} last={staff.last_name} size={64} />
             <div>
               <h1 className="text-[24px] font-semibold tracking-tight text-ink">
-                {staff.firstName} {staff.lastName}
+                {staff.first_name} {staff.last_name}
               </h1>
               <p className="mt-1 text-sm text-ink-secondary">
                 {staff.specialty ?? humanize(staff.role)}
@@ -72,7 +73,7 @@ export default function StaffDetailPage({ params }: PageProps<"/staff/[id]">) {
               </p>
               <div className="mt-2.5 flex flex-wrap items-center gap-2">
                 <Pill tone={staff.role === "TRAINER" ? "brand" : "muted"}>{humanize(staff.role)}</Pill>
-                {!staff.isActive && <Pill tone="critical">Inactive</Pill>}
+                {!staff.is_active && <Pill tone="critical">Inactive</Pill>}
                 <span className="flex items-center gap-3 text-xs text-ink-muted">
                   {staff.phone && <span className="flex items-center gap-1"><Phone size={11} />{staff.phone}</span>}
                   <span className="flex items-center gap-1"><Mail size={11} />{staff.email}</span>
@@ -138,18 +139,18 @@ export default function StaffDetailPage({ params }: PageProps<"/staff/[id]">) {
                       <tr key={c.id} className="table-row">
                         <Td>
                           <Link href={`/members/${c.id}`} className="flex items-center gap-3 hover:underline">
-                            <Avatar first={c.firstName} last={c.lastName} size={34} />
+                            <Avatar first={c.first_name} last={c.last_name} size={34} />
                             <div className="min-w-0">
-                              <p className="truncate font-medium">{c.firstName} {c.lastName}</p>
+                              <p className="truncate font-medium">{c.first_name} {c.last_name}</p>
                               <p className="truncate text-xs text-ink-muted">{c.email}</p>
                             </div>
                           </Link>
                         </Td>
-                        <Td><span className="text-ink-secondary">{humanize(c.primaryGoal) ?? "—"}</span></Td>
-                        <Td><span className="text-ink-secondary">{sub?.membershipPlan.name ?? "—"}</span></Td>
+                        <Td><span className="text-ink-secondary">{humanize(c.primary_goal) ?? "—"}</span></Td>
+                        <Td><span className="text-ink-secondary">{sub?.membership_plan.name ?? "—"}</span></Td>
                         <Td>{since === null ? <span className="text-ink-muted">Never</span>
                           : <span style={since >= 14 ? { color: "var(--status-critical)" } : undefined}>{since === 0 ? "Today" : `${since}d ago`}</span>}</Td>
-                        <Td><AccessPill access={{ ...c.access, validUntil: c.access.validUntil ? new Date(c.access.validUntil) : null, frozenUntil: c.access.frozenUntil ? new Date(c.access.frozenUntil) : null }} /></Td>
+                        <Td><AccessPill access={c.access} /></Td>
                         <Td><ChurnPill risk={c.churnRisk} compact /></Td>
                         <Td><Link href={`/members/${c.id}`}><ChevronRight size={15} className="text-ink-muted" /></Link></Td>
                       </tr>
@@ -172,16 +173,16 @@ export default function StaffDetailPage({ params }: PageProps<"/staff/[id]">) {
                     <li key={x.id} className="flex items-center gap-3 py-2.5">
                       <span className="flex h-10 w-14 shrink-0 flex-col items-center justify-center rounded-lg text-[11px] font-semibold"
                         style={{ backgroundColor: "var(--brand-soft)", color: "var(--brand)" }}>
-                        {new Date(x.scheduledAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                        {new Date(x.scheduled_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
                         <span className="text-[9px] font-normal opacity-80">
-                          {new Date(x.scheduledAt).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}
+                          {new Date(x.scheduled_at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}
                         </span>
                       </span>
                       <div className="min-w-0 flex-1">
                         <Link href={`/members/${x.member.id}`} className="block truncate text-[13px] font-medium text-ink hover:underline">
-                          {x.member.firstName} {x.member.lastName}
+                          {x.member.first_name} {x.member.last_name}
                         </Link>
-                        <p className="truncate text-xs text-ink-muted">{x.focus ?? "Session"} · {x.durationMinutes}m</p>
+                        <p className="truncate text-xs text-ink-muted">{x.focus ?? "Session"} · {x.duration_minutes}m</p>
                       </div>
                     </li>
                   ))}
@@ -199,10 +200,10 @@ export default function StaffDetailPage({ params }: PageProps<"/staff/[id]">) {
                         ? <CheckCircle2 size={15} style={{ color: "var(--status-good)" }} className="shrink-0" />
                         : <XCircle size={15} style={{ color: "var(--status-critical)" }} className="shrink-0" />}
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[13px] text-ink">{x.member.firstName} {x.member.lastName}</p>
+                        <p className="truncate text-[13px] text-ink">{x.member.first_name} {x.member.last_name}</p>
                         <p className="truncate text-xs text-ink-muted">{x.focus ?? "Session"}{x.notes ? ` · ${x.notes}` : ""}</p>
                       </div>
-                      <span className="shrink-0 text-xs text-ink-muted">{formatDate(x.scheduledAt)}</span>
+                      <span className="shrink-0 text-xs text-ink-muted">{formatDate(x.scheduled_at)}</span>
                     </li>
                   ))}
                 </ul>
@@ -217,19 +218,19 @@ export default function StaffDetailPage({ params }: PageProps<"/staff/[id]">) {
               <Item key={p.id}>
                 <Spotlight className="card-glass p-5">
                   <div className="flex items-center gap-3">
-                    <Avatar first={p.member.firstName} last={p.member.lastName} size={38} />
+                    <Avatar first={p.member.first_name} last={p.member.last_name} size={38} />
                     <div className="min-w-0 flex-1">
                       <Link href={`/members/${p.member.id}`} className="block truncate text-[14px] font-semibold text-ink hover:underline">
-                        {p.member.firstName} {p.member.lastName}
+                        {p.member.first_name} {p.member.last_name}
                       </Link>
-                      <p className="truncate text-xs text-ink-muted">{formatCurrency(p.priceCents)}</p>
+                      <p className="truncate text-xs text-ink-muted">{formatCurrency(p.price_cents)}</p>
                     </div>
                     {p.remaining <= 2 && <Pill tone="warning">Low</Pill>}
                   </div>
                   <p className="stat-figure mt-4 text-[26px] font-semibold leading-none text-ink">
-                    {p.remaining}<span className="unit ml-1">/ {p.sessionsPurchased} left</span>
+                    {p.remaining}<span className="unit ml-1">/ {p.sessions_purchased} left</span>
                   </p>
-                  <div className="mt-3"><Bar value={p.used / p.sessionsPurchased} /></div>
+                  <div className="mt-3"><Bar value={p.used / p.sessions_purchased} /></div>
                 </Spotlight>
               </Item>
             ))}
@@ -241,20 +242,20 @@ export default function StaffDetailPage({ params }: PageProps<"/staff/[id]">) {
           <Reveal className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {staff.dietPlans.map((d) => (
               <Item key={d.id}>
-                <div className="card-glass p-5" style={{ opacity: d.isActive ? 1 : 0.6 }}>
+                <div className="card-glass p-5" style={{ opacity: d.is_active ? 1 : 0.6 }}>
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: "var(--brand)" }}>{humanize(d.goal)}</p>
                       <p className="mt-0.5 truncate text-[15px] font-semibold text-ink">{d.title}</p>
                       {d.member && (
                         <Link href={`/members/${d.member.id}`} className="truncate text-xs text-ink-muted hover:underline">
-                          {d.member.firstName} {d.member.lastName}
+                          {d.member.first_name} {d.member.last_name}
                         </Link>
                       )}
                     </div>
-                    <Pill tone={d.isActive ? "good" : "muted"}>{d.isActive ? "Active" : "Archived"}</Pill>
+                    <Pill tone={d.is_active ? "good" : "muted"}>{d.is_active ? "Active" : "Archived"}</Pill>
                   </div>
-                  <p className="mt-3 text-sm text-ink-secondary">{d.dailyCalories} kcal · P{d.proteinG} / C{d.carbsG} / F{d.fatG}</p>
+                  <p className="mt-3 text-sm text-ink-secondary">{d.daily_calories} kcal · P{d.protein_g} / C{d.carbs_g} / F{d.fat_g}</p>
                 </div>
               </Item>
             ))}

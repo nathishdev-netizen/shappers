@@ -4,10 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Users, UserPlus, Contact, Dumbbell, Salad,
-  CreditCard, Receipt, Building2, ScanLine, LogOut, Lock,
+  CreditCard, Receipt, Building2, ScanLine, LogOut,
 } from "lucide-react";
 import { useTenant } from "@/lib/tenant-context";
-import { isLocked } from "@/lib/locked";
 
 const NAV: { href: string; label: string; icon: typeof LayoutDashboard; group?: string }[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -51,7 +50,6 @@ export function Sidebar() {
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-2">
         {NAV.map(({ href, label, icon: Icon, group }) => {
           const active = pathname === href || pathname.startsWith(href + "/");
-          const locked = isLocked(href);
           return (
             <div key={href}>
               {group && (
@@ -59,39 +57,24 @@ export function Sidebar() {
                   {group}
                 </p>
               )}
-              {locked ? (
-                // Rendered as a non-interactive row: a disabled <Link> would still
-                // navigate on middle-click or "open in new tab".
-                <div
-                  aria-disabled="true"
-                  title={`${label} is temporarily locked`}
-                  className="relative flex cursor-not-allowed items-center gap-3 rounded-xl px-3 py-2.5 text-[13.5px] opacity-45"
-                  style={{ color: "var(--sidebar-ink)" }}
-                >
-                  <Icon size={17} strokeWidth={2} />
-                  {label}
-                  <Lock size={12} strokeWidth={2.4} className="ml-auto shrink-0" />
-                </div>
-              ) : (
-                <Link
-                  href={href}
-                  aria-current={active ? "page" : undefined}
-                  className="relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13.5px] transition-colors"
-                  style={{
-                    backgroundColor: active ? "var(--sidebar-hover)" : "transparent",
-                    color: active ? "#ffffff" : "var(--sidebar-ink)",
-                  }}
-                >
-                  {active && (
-                    <span
-                      className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full"
-                      style={{ backgroundColor: "var(--brand)", boxShadow: "0 0 12px var(--brand-glow)" }}
-                    />
-                  )}
-                  <Icon size={17} strokeWidth={2} style={{ color: active ? "var(--brand)" : undefined }} />
-                  {label}
-                </Link>
-              )}
+              <Link
+                href={href}
+                aria-current={active ? "page" : undefined}
+                className="relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13.5px] transition-colors"
+                style={{
+                  backgroundColor: active ? "var(--sidebar-hover)" : "transparent",
+                  color: active ? "#ffffff" : "var(--sidebar-ink)",
+                }}
+              >
+                {active && (
+                  <span
+                    className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full"
+                    style={{ backgroundColor: "var(--brand)", boxShadow: "0 0 12px var(--brand-glow)" }}
+                  />
+                )}
+                <Icon size={17} strokeWidth={2} style={{ color: active ? "var(--brand)" : undefined }} />
+                {label}
+              </Link>
             </div>
           );
         })}

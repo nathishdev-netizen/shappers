@@ -3,7 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Plus, Phone, Mail, Users, CalendarDays, Salad } from "lucide-react";
-import { api, type StaffMemberDto, type BranchDto } from "@/lib/api";
+import { createClient } from "@/lib/supabase/client";
+import { listStaffDirectory, type StaffDirectoryRow } from "@/lib/insights/staff";
+import { listBranchesOverview, type BranchOverviewRow } from "@/lib/insights/branches";
+import { createStaffAccount, updateStaffAccount } from "@/lib/actions/staff";
 import { PageHeader } from "@/components/page-header";
 import { Reveal, Item, Page, Lift, Spotlight } from "@/components/motion";
 import { Avatar, Pill, Drawer, Labelled, Toast } from "@/components/ui";
@@ -12,26 +15,35 @@ const ROLES = ["OWNER", "ADMIN", "STAFF", "TRAINER"];
 const humanize = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
 
 export default function StaffPage() {
-  const [staff, setStaff] = useState<StaffMemberDto[]>([]);
-  const [branches, setBranches] = useState<BranchDto[]>([]);
+  const [staff, setStaff] = useState<StaffDirectoryRow[]>([]);
+  const [branches, setBranches] = useState<BranchOverviewRow[]>([]);
   const [open, setOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [form, setForm] = useState({ firstName: "", lastName: "", email: "", password: "", role: "TRAINER", phone: "", specialty: "", branchId: "" });
 
-  useEffect(() => { load(); api.getBranches().then(setBranches); }, []);
-  const load = () => api.listStaff().then(setStaff);
+  useEffect(() => { load(); listBranchesOverview(createClient()).then(setBranches); }, []);
+  const load = () => listStaffDirectory(createClient()).then(setStaff);
 
   async function create() {
     try {
-      await api.createStaff({ ...form, branchId: form.branchId || undefined, phone: form.phone || undefined, specialty: form.specialty || undefined });
+      await createStaffAccount({
+        firstName: form.firstName,
+        lastName: form.lastName,
+        email: form.email,
+        password: form.password,
+        role: form.role as StaffDirectoryRow["role"],
+        branchId: form.branchId || undefined,
+        phone: form.phone || undefined,
+        specialty: form.specialty || undefined,
+      });
       setOpen(false); setToast(`${form.firstName} added to the team`); setTimeout(() => setToast(null), 2000);
       setForm({ firstName: "", lastName: "", email: "", password: "", role: "TRAINER", phone: "", specialty: "", branchId: "" });
       load();
     } catch (e) { setToast(e instanceof Error ? e.message : "Could not add staff"); setTimeout(() => setToast(null), 2500); }
   }
 
-  async function toggle(s: StaffMemberDto) {
-    await api.updateStaff(s.id, { isActive: !s.isActive });
+  async function toggle(s: StaffDirectoryRow) {
+    await updateStaffAccount(s.id, { isActive: !s.is_active });
     load();
   }
 
@@ -40,7 +52,7 @@ export default function StaffPage() {
 
   return (
     <Page>
-      <PageHeader title="Staff" subtitle={`${staff.filter((s) => s.isActive).length} active across ${branches.length} branches`} actions={<button onClick={() => setOpen(true)} className="btn-brand"><Plus size={15} strokeWidth={2.4} /> Add staff</button>} />
+      <PageHeader title="Staff" subtitle={`${staff.filter((s) => s.is_active).length} active across ${branches.length} branches`} actions={<button onClick={() => setOpen(true)} className="btn-brand"><Plus size={15} strokeWidth={2.4} /> Add staff</button>} />
 
       <div className="space-y-8 p-6 lg:px-10">
         <section>
@@ -81,20 +93,20 @@ export default function StaffPage() {
   );
 }
 
-function StaffCard({ s, onToggle }: { s: StaffMemberDto; onToggle: () => void }) {
+function StaffCard({ s, onToggle }: { s: StaffDirectoryRow; onToggle: () => void }) {
   return (
     <Lift>
-      <Spotlight className="card-glass h-full p-5" style={{ opacity: s.isActive ? 1 : 0.55 }}>
+      <Spotlight className="card-glass h-full p-5" style={{ opacity: s.is_active ? 1 : 0.55 }}>
         <Link href={`/staff/${s.id}`} className="block">
         <div className="flex items-start gap-3">
-          <Avatar first={s.firstName} last={s.lastName} size={46} />
+          <Avatar first={s.first_name} last={s.last_name} size={46} />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[15px] font-semibold text-ink">{s.firstName} {s.lastName}</p>
+            <p className="truncate text-[15px] font-semibold text-ink">{s.first_name} {s.last_name}</p>
             <p className="truncate text-xs text-ink-secondary">{s.specialty ?? humanize(s.role)}</p>
             <div className="mt-2 flex flex-wrap gap-1.5">
               <Pill tone={s.role === "TRAINER" ? "brand" : "muted"}>{humanize(s.role)}</Pill>
               {s.branch && <Pill tone="muted">{s.branch.name}</Pill>}
-              {!s.isActive && <Pill tone="critical">Inactive</Pill>}
+              {!s.is_active && <Pill tone="critical">Inactive</Pill>}
             </div>
           </div>
         </div>
@@ -117,7 +129,7 @@ function StaffCard({ s, onToggle }: { s: StaffMemberDto; onToggle: () => void })
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggle(); }}
             className="text-ink-muted hover:text-ink"
           >
-            {s.isActive ? "Deactivate" : "Reactivate"}
+            {s.is_active ? "Deactivate" : "Reactivate"}
           </button>
         </div>
       </Spotlight>

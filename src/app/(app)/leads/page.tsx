@@ -2,8 +2,16 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Phone, CalendarClock, ArrowRight } from "lucide-react";
-import { api, type LeadDto, type LeadStatus, type MembershipPlanDto, type StaffDto } from "@/lib/api";
+import { createClient } from "@/lib/supabase/client";
+import { listLeads, createLead, updateLead, type LeadRow } from "@/lib/insights/leads";
+import { listPlans, listStaff } from "@/lib/insights/members";
+import { useTenant } from "@/lib/tenant-context";
+import type { Database } from "@/lib/supabase/types";
 import { formatCurrency, formatDate } from "@/lib/format";
+
+type LeadStatus = Database["public"]["Enums"]["lead_status"];
+type MembershipPlanRow = Database["public"]["Tables"]["membership_plans"]["Row"];
+type StaffRow = Database["public"]["Tables"]["profiles"]["Row"];
 import { PageHeader } from "@/components/page-header";
 import { Reveal, Item, Page, CountUp } from "@/components/motion";
 import { Avatar, Pill, PillTabs, Drawer, Labelled, Th, Td, Empty, Toast } from "@/components/ui";
@@ -20,35 +28,48 @@ const SOURCES = ["WALK_IN", "WEBSITE", "INSTAGRAM", "REFERRAL", "PHONE", "OTHER"
 const humanize = (s: string) => s.charAt(0) + s.slice(1).toLowerCase().replace(/_/g, " ");
 
 export default function LeadsPage() {
-  const [leads, setLeads] = useState<LeadDto[]>([]);
+  const { tenant } = useTenant();
+  const [leads, setLeads] = useState<LeadRow[]>([]);
   const [funnel, setFunnel] = useState<{ status: LeadStatus; count: number }[]>([]);
-  const [plans, setPlans] = useState<MembershipPlanDto[]>([]);
-  const [staff, setStaff] = useState<StaffDto[]>([]);
+  const [plans, setPlans] = useState<MembershipPlanRow[]>([]);
+  const [staff, setStaff] = useState<StaffRow[]>([]);
   const [tab, setTab] = useState<LeadStatus | "ALL">("ALL");
   const [open, setOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [form, setForm] = useState({ firstName: "", lastName: "", phone: "", email: "", source: "WALK_IN", interestedPlanId: "", assignedTrainerId: "", notes: "", followUpAt: "" });
 
-  useEffect(() => { load(); api.getPlans().then(setPlans); api.getStaff().then(setStaff); }, []);
-  async function load() { const r = await api.getLeads(); setLeads(r.leads); setFunnel(r.funnel); }
+  useEffect(() => {
+    const supabase = createClient();
+    load();
+    listPlans(supabase).then(setPlans);
+    listStaff(supabase).then(setStaff);
+  }, []);
+  async function load() { const r = await listLeads(createClient()); setLeads(r.leads); setFunnel(r.funnel); }
 
   const visible = useMemo(() => (tab === "ALL" ? leads : leads.filter((l) => l.status === tab)), [leads, tab]);
   const total = funnel.reduce((t, f) => t + f.count, 0);
   const converted = funnel.find((f) => f.status === "CONVERTED")?.count ?? 0;
 
-  async function advance(lead: LeadDto, status: LeadStatus) {
-    await api.updateLead(lead.id, { status });
-    setToast(`${lead.firstName} moved to ${humanize(status)}`);
+  async function advance(lead: LeadRow, status: LeadStatus) {
+    await updateLead(createClient(), lead.id, { status });
+    setToast(`${lead.first_name} moved to ${humanize(status)}`);
     setTimeout(() => setToast(null), 2000);
     load();
   }
 
   async function create() {
-    await api.createLead({
-      ...form,
-      email: form.email || undefined, interestedPlanId: form.interestedPlanId || undefined,
-      assignedTrainerId: form.assignedTrainerId || undefined, notes: form.notes || undefined,
-      followUpAt: form.followUpAt ? new Date(form.followUpAt).toISOString() : undefined,
+    if (!tenant) return;
+    await createLead(createClient(), {
+      tenant_id: tenant.id,
+      first_name: form.firstName,
+      last_name: form.lastName,
+      phone: form.phone,
+      email: form.email || undefined,
+      source: form.source as Database["public"]["Enums"]["lead_source"],
+      interested_plan_id: form.interestedPlanId || undefined,
+      assigned_trainer_id: form.assignedTrainerId || undefined,
+      notes: form.notes || undefined,
+      follow_up_at: form.followUpAt ? new Date(form.followUpAt).toISOString() : undefined,
     });
     setOpen(false);
     setForm({ firstName: "", lastName: "", phone: "", email: "", source: "WALK_IN", interestedPlanId: "", assignedTrainerId: "", notes: "", followUpAt: "" });
@@ -90,12 +111,12 @@ export default function LeadsPage() {
                   const next = idx >= 0 && idx < 3 ? STAGES[idx + 1] : null;
                   return (
                     <tr key={l.id} className="table-row">
-                      <Td><div className="flex items-center gap-3"><Avatar first={l.firstName} last={l.lastName} size={34} /><div><p className="font-medium">{l.firstName} {l.lastName}</p><p className="text-xs text-ink-muted">{l.branch?.name ?? "—"} · {formatDate(l.createdAt)}</p></div></div></Td>
+                      <Td><div className="flex items-center gap-3"><Avatar first={l.first_name} last={l.last_name} size={34} /><div><p className="font-medium">{l.first_name} {l.last_name}</p><p className="text-xs text-ink-muted">{l.branch?.name ?? "—"} · {formatDate(l.created_at)}</p></div></div></Td>
                       <Td><span className="flex items-center gap-1.5 text-ink-secondary"><Phone size={12} />{l.phone}</span></Td>
                       <Td><span className="text-ink-secondary">{humanize(l.source)}</span></Td>
-                      <Td>{l.interestedPlan ? <span>{l.interestedPlan.name} <span className="text-ink-muted">· {formatCurrency(l.interestedPlan.priceCents)}</span></span> : <span className="text-ink-muted">—</span>}</Td>
-                      <Td>{l.assignedTrainer ? `${l.assignedTrainer.firstName} ${l.assignedTrainer.lastName}` : <span className="text-ink-muted">Unassigned</span>}</Td>
-                      <Td>{l.followUpAt ? <span className="flex items-center gap-1.5 text-ink-secondary"><CalendarClock size={12} />{formatDate(l.followUpAt)}</span> : <span className="text-ink-muted">—</span>}</Td>
+                      <Td>{l.interested_plan ? <span>{l.interested_plan.name} <span className="text-ink-muted">· {formatCurrency(l.interested_plan.price_cents)}</span></span> : <span className="text-ink-muted">—</span>}</Td>
+                      <Td>{l.assigned_trainer ? `${l.assigned_trainer.first_name} ${l.assigned_trainer.last_name}` : <span className="text-ink-muted">Unassigned</span>}</Td>
+                      <Td>{l.follow_up_at ? <span className="flex items-center gap-1.5 text-ink-secondary"><CalendarClock size={12} />{formatDate(l.follow_up_at)}</span> : <span className="text-ink-muted">—</span>}</Td>
                       <Td><Pill tone={STAGES[idx]?.tone ?? "muted"}>{humanize(l.status)}</Pill></Td>
                       <Td right>
                         {next ? <button onClick={() => advance(l, next.value)} className="btn-ghost !py-1 !px-3 !text-xs">{next.label} <ArrowRight size={12} /></button>
@@ -127,8 +148,8 @@ export default function LeadsPage() {
             <Labelled label="Source"><select className="field" value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })}>{SOURCES.map((s) => <option key={s} value={s}>{humanize(s)}</option>)}</select></Labelled>
             <Labelled label="Follow-up date"><input type="date" className="field" value={form.followUpAt} onChange={(e) => setForm({ ...form, followUpAt: e.target.value })} /></Labelled>
           </div>
-          <Labelled label="Interested plan"><select className="field" value={form.interestedPlanId} onChange={(e) => setForm({ ...form, interestedPlanId: e.target.value })}><option value="">Not sure yet</option>{plans.map((p) => <option key={p.id} value={p.id}>{p.name} — {formatCurrency(p.priceCents)}</option>)}</select></Labelled>
-          <Labelled label="Assign to"><select className="field" value={form.assignedTrainerId} onChange={(e) => setForm({ ...form, assignedTrainerId: e.target.value })}><option value="">Unassigned</option>{staff.map((s) => <option key={s.id} value={s.id}>{s.firstName} {s.lastName} · {s.role.toLowerCase()}</option>)}</select></Labelled>
+          <Labelled label="Interested plan"><select className="field" value={form.interestedPlanId} onChange={(e) => setForm({ ...form, interestedPlanId: e.target.value })}><option value="">Not sure yet</option>{plans.map((p) => <option key={p.id} value={p.id}>{p.name} — {formatCurrency(p.price_cents)}</option>)}</select></Labelled>
+          <Labelled label="Assign to"><select className="field" value={form.assignedTrainerId} onChange={(e) => setForm({ ...form, assignedTrainerId: e.target.value })}><option value="">Unassigned</option>{staff.map((s) => <option key={s.id} value={s.id}>{s.first_name} {s.last_name} · {s.role.toLowerCase()}</option>)}</select></Labelled>
           <Labelled label="Notes"><textarea rows={3} className="field resize-none" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></Labelled>
         </div>
       </Drawer>

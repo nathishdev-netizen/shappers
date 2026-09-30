@@ -328,3 +328,17 @@ export async function listPlans(supabase: SupabaseClient<Database>) {
   if (error) throw error;
   return data ?? [];
 }
+
+export async function createPlan(
+  supabase: SupabaseClient<Database>,
+  tenantId: string,
+  input: { name: string; description?: string; price_cents: number; billing_cycle: Database["public"]["Enums"]["billing_cycle"]; currency?: string },
+) {
+  const { data, error } = await supabase
+    .from("membership_plans")
+    .insert({ tenant_id: tenantId, ...input })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}

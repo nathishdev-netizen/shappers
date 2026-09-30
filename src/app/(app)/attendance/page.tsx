@@ -2,8 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { QrCode, Search, Fingerprint, CreditCard, PenLine } from "lucide-react";
-import { api, type AttendanceEventDto, type MemberDto } from "@/lib/api";
+import { createClient } from "@/lib/supabase/client";
+import { getTodayAttendance } from "@/lib/insights/attendance";
+import { listMembers, checkInMember, type MemberListRow } from "@/lib/insights/members";
 import { initials } from "@/lib/format";
+
+type AttendanceEventRow = Awaited<ReturnType<typeof getTodayAttendance>>[number];
 import { PageHeader } from "@/components/page-header";
 
 const SOURCE_META: Record<string, { label: string; Icon: typeof QrCode }> = {
@@ -14,8 +18,8 @@ const SOURCE_META: Record<string, { label: string; Icon: typeof QrCode }> = {
 };
 
 export default function AttendancePage() {
-  const [members, setMembers] = useState<MemberDto[]>([]);
-  const [events, setEvents] = useState<AttendanceEventDto[]>([]);
+  const [members, setMembers] = useState<MemberListRow[]>([]);
+  const [events, setEvents] = useState<AttendanceEventRow[]>([]);
   const [query, setQuery] = useState("");
   const [pendingId, setPendingId] = useState<string | null>(null);
 
@@ -24,7 +28,8 @@ export default function AttendancePage() {
   }, []);
 
   async function load() {
-    const [membersRes, eventsRes] = await Promise.all([api.getMembers(), api.getTodayAttendance()]);
+    const supabase = createClient();
+    const [membersRes, eventsRes] = await Promise.all([listMembers(supabase), getTodayAttendance(supabase)]);
     setMembers(membersRes);
     setEvents(eventsRes);
   }
@@ -32,7 +37,7 @@ export default function AttendancePage() {
   async function handleCheckIn(memberId: string) {
     setPendingId(memberId);
     try {
-      await api.checkIn(memberId);
+      await checkInMember(createClient(), memberId);
       await load();
     } finally {
       setPendingId(null);
@@ -43,7 +48,7 @@ export default function AttendancePage() {
     const q = query.trim().toLowerCase();
     if (!q) return members.slice(0, 8);
     return members
-      .filter((m) => `${m.firstName} ${m.lastName} ${m.email}`.toLowerCase().includes(q))
+      .filter((m) => `${m.first_name} ${m.last_name} ${m.email}`.toLowerCase().includes(q))
       .slice(0, 8);
   }, [members, query]);
 
@@ -77,11 +82,11 @@ export default function AttendancePage() {
             {filtered.map((member) => (
               <li key={member.id} className="flex items-center gap-3 py-2.5">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-page text-[11px] font-semibold text-ink-secondary">
-                  {initials(member.firstName, member.lastName)}
+                  {initials(member.first_name, member.last_name)}
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-ink">
-                    {member.firstName} {member.lastName}
+                    {member.first_name} {member.last_name}
                   </p>
                   <p className="truncate text-xs text-ink-muted">{member.email}</p>
                 </div>
@@ -121,12 +126,12 @@ export default function AttendancePage() {
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm text-ink">
-                      {event.member.firstName} {event.member.lastName}
+                      {event.member.first_name} {event.member.last_name}
                     </p>
                     <p className="text-xs text-ink-muted">{meta.label}</p>
                   </div>
                   <span className="shrink-0 text-xs tabular-nums text-ink-secondary">
-                    {new Date(event.checkedInAt).toLocaleTimeString("en-IN", {
+                    {new Date(event.checked_in_at).toLocaleTimeString("en-IN", {
                       hour: "numeric",
                       minute: "2-digit",
                     })}
