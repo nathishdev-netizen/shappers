@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight } from "lucide-react";
-import { api, ApiError, apiBaseUrl, setToken } from "@/lib/api";
+import { createClient } from "@/lib/supabase/client";
 
 const DEMO_TENANTS = [
   { subdomain: "shaper", label: "SHAPER Elite Fitness Studio", email: "owner@shaper.fit", hex: "#f00000" },
@@ -12,7 +12,6 @@ const DEMO_TENANTS = [
 
 export default function LoginPage() {
   const router = useRouter();
-  const [subdomain, setSubdomain] = useState("shaper");
   const [email, setEmail] = useState("owner@shaper.fit");
   const [password, setPassword] = useState("Password123!");
   const [error, setError] = useState<string | null>(
@@ -26,24 +25,18 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    try {
-      const { accessToken, user } = await api.login(subdomain, email, password);
-      setToken(accessToken);
-      localStorage.setItem("shappers_user", JSON.stringify(user));
-      router.push("/dashboard");
-    } catch (err) {
-      // A rejected password and an unreachable server are different problems.
-      // Blaming the credentials for a network fault sends people to re-type a
-      // password that was never wrong — and hides that the app is pointed at an
-      // API it cannot see, which is what a stale build or old URL looks like.
-      const rejected = err instanceof ApiError && (err.status === 401 || err.status === 400);
-      setError(
-        rejected
-          ? "Those credentials didn't work. Check the subdomain and try again."
-          : `Can't reach the server at ${apiBaseUrl}. If this is an old tab, reload the page.`,
-      );
+
+    const supabase = createClient();
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+
+    if (signInError) {
+      setError("Those credentials didn't work. Check the email and password and try again.");
       setLoading(false);
+      return;
     }
+
+    router.push("/dashboard");
+    router.refresh();
   }
 
   const field =
@@ -114,17 +107,6 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="mt-8 space-y-4">
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-ink-secondary">Gym subdomain</label>
-              <input
-                className={field}
-                style={ring}
-                value={subdomain}
-                onChange={(e) => setSubdomain(e.target.value)}
-                required
-              />
-            </div>
-
-            <div>
               <label className="mb-1.5 block text-xs font-medium text-ink-secondary">Email</label>
               <input
                 type="email"
@@ -175,7 +157,6 @@ export default function LoginPage() {
                 <button
                   key={t.subdomain}
                   onClick={() => {
-                    setSubdomain(t.subdomain);
                     setEmail(t.email);
                     setPassword("Password123!");
                   }}

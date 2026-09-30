@@ -2,40 +2,37 @@
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { api, clearToken, getToken, type TenantDto } from "./api";
+import { createClient } from "@/lib/supabase/client";
 
 export interface SessionUser {
   userId: string;
-  firstName?: string;
-  lastName?: string;
+  firstName: string;
+  lastName: string;
   role: string;
   email: string;
 }
 
+export interface TenantInfo {
+  id: string;
+  name: string;
+  subdomain: string;
+  logoUrl: string | null;
+  colors: { primary?: string; secondary?: string } | null;
+}
+
 interface TenantContextValue {
-  tenant: TenantDto | null;
+  tenant: TenantInfo | null;
   user: SessionUser | null;
-  setTenant: (tenant: TenantDto) => void;
   logout: () => void;
 }
 
 const TenantContext = createContext<TenantContextValue>({
   tenant: null,
   user: null,
-  setTenant: () => {},
   logout: () => {},
 });
 
 export const useTenant = () => useContext(TenantContext);
-
-export function readSessionUser(): SessionUser | null {
-  try {
-    const raw = localStorage.getItem("shappers_user");
-    return raw ? (JSON.parse(raw) as SessionUser) : null;
-  } catch {
-    return null;
-  }
-}
 
 /** Relative luminance decides whether brand-colored surfaces take white or ink text. */
 function readableInk(hex: string): string {
@@ -48,24 +45,57 @@ function readableInk(hex: string): string {
 
 export function TenantProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const [tenant, setTenant] = useState<TenantDto | null>(null);
+  const [tenant, setTenant] = useState<TenantInfo | null>(null);
   const [user, setUser] = useState<SessionUser | null>(null);
   const [checked, setChecked] = useState(false);
 
   useEffect(() => {
-    if (!getToken()) {
-      router.replace("/login");
-      return;
-    }
-    setUser(readSessionUser());
-    api
-      .getMyTenant()
-      .then(setTenant)
-      .catch(() => {
-        clearToken();
+    const supabase = createClient();
+
+    async function load() {
+      const {
+        data: { user: authUser },
+      } = await supabase.auth.getUser();
+
+      if (!authUser) {
         router.replace("/login");
-      })
-      .finally(() => setChecked(true));
+        return;
+      }
+
+      const { data: profile, error } = await supabase
+        .from("profiles")
+        .select("id, first_name, last_name, role, email, tenant_id, tenants(id, name, subdomain, logo_url, colors)")
+        .eq("id", authUser.id)
+        .single();
+
+      if (error || !profile) {
+        await supabase.auth.signOut();
+        router.replace("/login");
+        return;
+      }
+
+      setUser({
+        userId: profile.id,
+        firstName: profile.first_name,
+        lastName: profile.last_name,
+        role: profile.role,
+        email: profile.email,
+      });
+
+      const t = profile.tenants;
+      if (t) {
+        setTenant({
+          id: t.id,
+          name: t.name,
+          subdomain: t.subdomain,
+          logoUrl: t.logo_url,
+          colors: t.colors as TenantInfo["colors"],
+        });
+      }
+      setChecked(true);
+    }
+
+    load();
   }, [router]);
 
   useEffect(() => {
@@ -76,9 +106,8 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   }, [tenant]);
 
   function logout() {
-    clearToken();
-    localStorage.removeItem("shappers_user");
-    router.replace("/login");
+    const supabase = createClient();
+    supabase.auth.signOut().then(() => router.replace("/login"));
   }
 
   if (!checked || !tenant) {
@@ -89,7 +118,5 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  return (
-    <TenantContext.Provider value={{ tenant, user, setTenant, logout }}>{children}</TenantContext.Provider>
-  );
+  return <TenantContext.Provider value={{ tenant, user, logout }}>{children}</TenantContext.Provider>;
 }

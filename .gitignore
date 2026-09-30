@@ -2,6 +2,8 @@ node_modules/
 dist/
 build/
 .next/
+next-env.d.ts
+*.tsbuildinfo
 .expo/
 .expo-shared/
 *.apk
@@ -20,3 +22,4 @@ infra/miniodata/
 supabase/.temp/
 .vercel
 .env*
+!.env.example
