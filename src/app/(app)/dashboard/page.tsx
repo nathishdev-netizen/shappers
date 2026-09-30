@@ -4,8 +4,12 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, ArrowUpRight, Users, Dumbbell, CalendarDays, Clock, AlertTriangle, IndianRupee } from "lucide-react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from "recharts";
-import { api, type AnalyticsOverview, type SubscriptionDto } from "@/lib/api";
+import { createClient } from "@/lib/supabase/client";
+import { getAnalyticsOverview, getDuesOverview } from "@/lib/insights/analytics";
 import { formatCompactCurrency, formatCurrency, formatMonth, formatShortDay, daysUntil } from "@/lib/format";
+
+type AnalyticsOverview = Awaited<ReturnType<typeof getAnalyticsOverview>>;
+type DuesRow = Awaited<ReturnType<typeof getDuesOverview>>[number];
 import { PageHeader } from "@/components/page-header";
 import { StatTile } from "@/components/stat-tile";
 import { BarEmphasis } from "@/components/charts/bar-emphasis";
@@ -21,10 +25,14 @@ function weekOverWeek(points: { checkIns: number }[]) {
 
 export default function DashboardPage() {
   const [data, setData] = useState<AnalyticsOverview | null>(null);
-  const [dues, setDues] = useState<SubscriptionDto[]>([]);
+  const [dues, setDues] = useState<DuesRow[]>([]);
 
   useEffect(() => {
-    Promise.all([api.getAnalytics(), api.getDuesOverview()]).then(([a, d]) => { setData(a); setDues(d); });
+    const supabase = createClient();
+    Promise.all([getAnalyticsOverview(supabase), getDuesOverview(supabase)]).then(([a, d]) => {
+      setData(a);
+      setDues(d);
+    });
   }, []);
 
   if (!data) {
@@ -140,11 +148,11 @@ export default function DashboardPage() {
                   {sessionsToday.slice(0, 5).map((s) => (
                     <li key={s.id} className="flex items-center gap-3 py-2.5" style={{ borderColor: "var(--hairline)" }}>
                       <span className="flex h-9 w-12 shrink-0 flex-col items-center justify-center rounded-lg text-[11px] font-semibold" style={{ backgroundColor: "var(--brand-soft)", color: "var(--brand)" }}>
-                        {new Date(s.scheduledAt).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }).replace(" ", "")}
+                        {new Date(s.scheduled_at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }).replace(" ", "")}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[13px] font-medium text-ink">{s.member.firstName} {s.member.lastName}</p>
-                        <p className="truncate text-xs text-ink-muted">{s.focus ?? "Session"} · {s.trainer ? `${s.trainer.firstName}` : "Unassigned"}</p>
+                        <p className="truncate text-[13px] font-medium text-ink">{s.member.first_name} {s.member.last_name}</p>
+                        <p className="truncate text-xs text-ink-muted">{s.focus ?? "Session"} · {s.trainer ? `${s.trainer.first_name}` : "Unassigned"}</p>
                       </div>
                     </li>
                   ))}
@@ -159,13 +167,13 @@ export default function DashboardPage() {
               {expiringSoon.length === 0 ? <Empty>Nothing expiring in the next 7 days.</Empty> : (
                 <ul className="divide-y" style={{ borderColor: "var(--hairline)" }}>
                   {expiringSoon.slice(0, 5).map((e) => {
-                    const d = daysUntil(e.currentPeriodEnd);
+                    const d = daysUntil(e.current_period_end);
                     return (
                       <li key={e.id} className="flex items-center gap-3 py-2.5" style={{ borderColor: "var(--hairline)" }}>
-                        <Avatar first={e.member.firstName} last={e.member.lastName} size={34} />
+                        <Avatar first={e.member!.first_name} last={e.member!.last_name} size={34} />
                         <div className="min-w-0 flex-1">
-                          <Link href={`/members/${e.member.id}`} className="block truncate text-[13px] font-medium text-ink hover:underline">{e.member.firstName} {e.member.lastName}</Link>
-                          <p className="truncate text-xs text-ink-muted">{e.membershipPlan.name}</p>
+                          <Link href={`/members/${e.member!.id}`} className="block truncate text-[13px] font-medium text-ink hover:underline">{e.member!.first_name} {e.member!.last_name}</Link>
+                          <p className="truncate text-xs text-ink-muted">{e.membership_plan!.name}</p>
                         </div>
                         <Pill tone={d <= 2 ? "critical" : "warning"}>{d === 0 ? "Today" : `${d}d`}</Pill>
                       </li>
@@ -183,12 +191,12 @@ export default function DashboardPage() {
                 <ul className="divide-y" style={{ borderColor: "var(--hairline)" }}>
                   {dues.slice(0, 5).map((sub) => (
                     <li key={sub.id} className="flex items-center gap-3 py-2.5" style={{ borderColor: "var(--hairline)" }}>
-                      <Avatar first={sub.member?.firstName ?? "?"} last={sub.member?.lastName ?? ""} size={34} tone="muted" />
+                      <Avatar first={sub.member?.first_name ?? "?"} last={sub.member?.last_name ?? ""} size={34} tone="muted" />
                       <div className="min-w-0 flex-1">
-                        <Link href={`/members/${sub.member?.id}`} className="block truncate text-[13px] font-medium text-ink hover:underline">{sub.member?.firstName} {sub.member?.lastName}</Link>
-                        <p className="truncate text-xs text-ink-muted">{sub.membershipPlan.name}</p>
+                        <Link href={`/members/${sub.member?.id}`} className="block truncate text-[13px] font-medium text-ink hover:underline">{sub.member?.first_name} {sub.member?.last_name}</Link>
+                        <p className="truncate text-xs text-ink-muted">{sub.membership_plan!.name}</p>
                       </div>
-                      <span className="text-[13px] font-semibold tabular-nums" style={{ color: "var(--status-critical)" }}>{formatCurrency(sub.membershipPlan.priceCents)}</span>
+                      <span className="text-[13px] font-semibold tabular-nums" style={{ color: "var(--status-critical)" }}>{formatCurrency(sub.membership_plan!.price_cents)}</span>
                     </li>
                   ))}
                 </ul>

@@ -3,7 +3,11 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Search, UserPlus, ChevronRight, MapPin } from "lucide-react";
-import { api, type MemberDto, type BranchDto } from "@/lib/api";
+import { createClient } from "@/lib/supabase/client";
+import { listMembers, listBranches, type MemberListRow } from "@/lib/insights/members";
+import type { Database } from "@/lib/supabase/types";
+
+type BranchRow = Database["public"]["Tables"]["branches"]["Row"];
 import { formatCurrency, formatDate } from "@/lib/format";
 import { PageHeader } from "@/components/page-header";
 import { AccessPill, ChurnPill } from "@/components/access-badge";
@@ -20,18 +24,21 @@ export default function MembersPage() {
 function MembersInner() {
   const router = useRouter();
   const params = useSearchParams();
-  const [members, setMembers] = useState<MemberDto[]>([]);
-  const [branches, setBranches] = useState<BranchDto[]>([]);
+  const [members, setMembers] = useState<MemberListRow[]>([]);
+  const [branches, setBranches] = useState<BranchRow[]>([]);
   const [query, setQuery] = useState(params.get("q") ?? "");
   const [filter, setFilter] = useState<Filter>("ALL");
   const [branch, setBranch] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => { load(); api.getBranches().then(setBranches); }, []);
+  useEffect(() => {
+    load();
+    listBranches(createClient()).then(setBranches);
+  }, []);
   useEffect(() => { setQuery(params.get("q") ?? ""); }, [params]);
 
-  async function load() { setMembers(await api.getMembers()); setLoading(false); }
+  async function load() { setMembers(await listMembers(createClient())); setLoading(false); }
 
   const counts = useMemo(() => ({
     ALL: members.length,
@@ -44,7 +51,7 @@ function MembersInner() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return members.filter((m) => {
-      if (q && !`${m.firstName} ${m.lastName} ${m.email} ${m.phone ?? ""}`.toLowerCase().includes(q)) return false;
+      if (q && !`${m.first_name} ${m.last_name} ${m.email} ${m.phone ?? ""}`.toLowerCase().includes(q)) return false;
       if (branch && m.branch?.id !== branch) return false;
       switch (filter) {
         case "ACTIVE": return m.access.allowed;
@@ -98,12 +105,12 @@ function MembersInner() {
                   const since = m.visits.daysSinceLastVisit;
                   return (
                     <tr key={m.id} className="table-row cursor-pointer" onClick={() => router.push(`/members/${m.id}`)}>
-                      <Td><div className="flex items-center gap-3"><Avatar first={m.firstName} last={m.lastName} size={36} /><div className="min-w-0"><p className="truncate font-medium">{m.firstName} {m.lastName}</p><p className="truncate text-xs text-ink-muted">{m.email}</p></div></div></Td>
+                      <Td><div className="flex items-center gap-3"><Avatar first={m.first_name} last={m.last_name} size={36} /><div className="min-w-0"><p className="truncate font-medium">{m.first_name} {m.last_name}</p><p className="truncate text-xs text-ink-muted">{m.email}</p></div></div></Td>
                       <Td>{m.branch ? <span className="flex items-center gap-1.5 text-ink-secondary"><MapPin size={12} />{m.branch.name}</span> : <span className="text-ink-muted">—</span>}</Td>
-                      <Td><span className="text-ink-secondary">{sub?.membershipPlan.name ?? "—"}</span></Td>
+                      <Td><span className="text-ink-secondary">{sub?.membership_plan?.name ?? "—"}</span></Td>
                       <Td>{since === null ? <span className="text-ink-muted">Never</span> : <span style={since >= 14 ? { color: "var(--status-critical)" } : undefined}>{since === 0 ? "Today" : `${since}d ago`}</span>}</Td>
-                      <Td>{sub ? <span className="tabular-nums text-ink-secondary">{formatDate(sub.currentPeriodEnd)}{days !== null && days >= 0 && days <= 7 && <span className="ml-1.5 text-xs" style={{ color: "var(--status-warning)" }}>{days}d</span>}</span> : "—"}</Td>
-                      <Td right><span className="font-semibold tabular-nums">{sub ? formatCurrency(sub.membershipPlan.priceCents) : "—"}</span></Td>
+                      <Td>{sub ? <span className="tabular-nums text-ink-secondary">{formatDate(sub.current_period_end)}{days !== null && days >= 0 && days <= 7 && <span className="ml-1.5 text-xs" style={{ color: "var(--status-warning)" }}>{days}d</span>}</span> : "—"}</Td>
+                      <Td right><span className="font-semibold tabular-nums">{sub ? formatCurrency(sub.membership_plan!.price_cents) : "—"}</span></Td>
                       <Td><AccessPill access={m.access} /></Td>
                       <Td><ChurnPill risk={m.churnRisk} compact /></Td>
                       <Td><ChevronRight size={15} className="text-ink-muted" /></Td>

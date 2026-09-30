@@ -2,8 +2,89 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Check, X, ChevronLeft, ChevronRight, CircleAlert } from "lucide-react";
-import { api, type MembershipPlanDto, type NewMemberPayload, type StaffDto } from "@/lib/api";
+import { createClient } from "@/lib/supabase/client";
+import { createMember, listPlans, listStaff, type NewMemberPayload as DbMemberPayload } from "@/lib/insights/members";
+import { useTenant } from "@/lib/tenant-context";
+import type { Database } from "@/lib/supabase/types";
 import { formatCurrency, formatDate } from "@/lib/format";
+
+type MembershipPlanRow = Database["public"]["Tables"]["membership_plans"]["Row"];
+type StaffRow = Database["public"]["Tables"]["profiles"]["Row"];
+
+/** Local form shape — kept camelCase (decoupled from the DB payload) so the
+ * step components below didn't need touching; converted to snake_case once,
+ * at submit time, in toDbPayload(). */
+interface NewMemberPayload {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone?: string;
+  alternatePhone?: string;
+  dateOfBirth?: string;
+  gender?: string;
+  occupation?: string;
+  preferredContact?: string;
+  addressLine?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  idProofType?: string;
+  idProofLast4?: string;
+  emergencyName?: string;
+  emergencyRelationship?: string;
+  emergencyPhone?: string;
+  medicalConditions?: string;
+  allergies?: string;
+  medications?: string;
+  injuries?: string;
+  physicianClearance?: boolean;
+  parqCompleted?: boolean;
+  waiverSigned?: boolean;
+  primaryGoal?: string;
+  experienceLevel?: string;
+  heightCm?: number;
+  assignedTrainerId?: string;
+  accessCardNumber?: string;
+  notes?: string;
+  membership?: DbMemberPayload["membership"];
+}
+
+function toDbPayload(form: NewMemberPayload): DbMemberPayload {
+  return {
+    first_name: form.firstName,
+    last_name: form.lastName,
+    email: form.email,
+    phone: form.phone,
+    alternate_phone: form.alternatePhone,
+    date_of_birth: form.dateOfBirth,
+    gender: form.gender as DbMemberPayload["gender"],
+    occupation: form.occupation,
+    preferred_contact: form.preferredContact as DbMemberPayload["preferred_contact"],
+    address_line: form.addressLine,
+    city: form.city,
+    state: form.state,
+    postal_code: form.postalCode,
+    id_proof_type: form.idProofType as DbMemberPayload["id_proof_type"],
+    id_proof_last4: form.idProofLast4,
+    emergency_name: form.emergencyName,
+    emergency_relationship: form.emergencyRelationship,
+    emergency_phone: form.emergencyPhone,
+    medical_conditions: form.medicalConditions,
+    allergies: form.allergies,
+    medications: form.medications,
+    injuries: form.injuries,
+    physician_clearance: form.physicianClearance,
+    parq_completed: form.parqCompleted,
+    waiver_signed: form.waiverSigned,
+    primary_goal: form.primaryGoal as DbMemberPayload["primary_goal"],
+    experience_level: form.experienceLevel as DbMemberPayload["experience_level"],
+    height_cm: form.heightCm,
+    assigned_trainer_id: form.assignedTrainerId,
+    access_card_number: form.accessCardNumber,
+    notes: form.notes,
+    membership: form.membership,
+  };
+}
 
 const STEPS = ["Personal", "Membership & payment", "Health & safety", "Training"] as const;
 type Step = number;
@@ -34,9 +115,10 @@ function Labelled({ label, hint, children }: { label: string; hint?: string; chi
 }
 
 export function OnboardWizard({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const { tenant } = useTenant();
   const [step, setStep] = useState<Step>(0);
-  const [plans, setPlans] = useState<MembershipPlanDto[]>([]);
-  const [staff, setStaff] = useState<StaffDto[]>([]);
+  const [plans, setPlans] = useState<MembershipPlanRow[]>([]);
+  const [staff, setStaff] = useState<StaffRow[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,7 +139,8 @@ export function OnboardWizard({ onClose, onCreated }: { onClose: () => void; onC
   const [balanceDueAt, setBalanceDueAt] = useState("");
 
   useEffect(() => {
-    Promise.all([api.getPlans(), api.getStaff()]).then(([p, s]) => {
+    const supabase = createClient();
+    Promise.all([listPlans(supabase), listStaff(supabase)]).then(([p, s]) => {
       setPlans(p);
       setStaff(s);
     });
@@ -70,9 +153,9 @@ export function OnboardWizard({ onClose, onCreated }: { onClose: () => void; onC
     setPlanId(id);
     const selected = plans.find((p) => p.id === id);
     if (!selected) return;
-    setDurationDays(DAYS_FOR_CYCLE[selected.billingCycle] ?? 30);
-    setTotalFee(selected.priceCents / 100);
-    setAmountPaid(selected.priceCents / 100);
+    setDurationDays(DAYS_FOR_CYCLE[selected.billing_cycle] ?? 30);
+    setTotalFee(selected.price_cents / 100);
+    setAmountPaid(selected.price_cents / 100);
   }
 
   const days = typeof durationDays === "number" ? durationDays : 0;
@@ -95,6 +178,7 @@ export function OnboardWizard({ onClose, onCreated }: { onClose: () => void; onC
       setError("First name, last name and email are required.");
       return;
     }
+    if (!tenant) return;
     setSaving(true);
     setError(null);
     try {
@@ -109,7 +193,7 @@ export function OnboardWizard({ onClose, onCreated }: { onClose: () => void; onC
                 durationDays: days || undefined,
                 totalFeeCents: Math.round(feeRupees * 100),
                 amountPaidCents: Math.round(paidRupees * 100),
-                paymentMethod,
+                paymentMethod: paymentMethod as Database["public"]["Enums"]["payment_method"],
                 balanceDueAt: balanceRupees > 0 && balanceDueAt
                   ? new Date(balanceDueAt).toISOString()
                   : undefined,
@@ -123,7 +207,7 @@ export function OnboardWizard({ onClose, onCreated }: { onClose: () => void; onC
         if (payload[key] === "" || payload[key] === undefined) delete payload[key];
       }
 
-      await api.createMember(payload);
+      await createMember(createClient(), tenant.id, toDbPayload(payload));
       onCreated();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create member");
@@ -354,8 +438,8 @@ function PersonalStep({ form, set }: { form: NewMemberPayload; set: SetFn }) {
 }
 
 function MembershipStep(props: {
-  plans: MembershipPlanDto[];
-  plan?: MembershipPlanDto;
+  plans: MembershipPlanRow[];
+  plan?: MembershipPlanRow;
   planId: string;
   choosePlan: (id: string) => void;
   startDate: string;
@@ -401,12 +485,12 @@ function MembershipStep(props: {
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-ink">{p.name}</p>
                   <p className="truncate text-xs text-ink-muted">
-                    {p.description ?? `${p.billingCycle.toLowerCase()} membership`}
+                    {p.description ?? `${p.billing_cycle.toLowerCase()} membership`}
                   </p>
                 </div>
                 <div className="shrink-0 text-right">
-                  <p className="text-sm font-semibold text-ink">{formatCurrency(p.priceCents)}</p>
-                  <p className="text-xs text-ink-muted">{DAYS_FOR_CYCLE[p.billingCycle] ?? 30} days</p>
+                  <p className="text-sm font-semibold text-ink">{formatCurrency(p.price_cents)}</p>
+                  <p className="text-xs text-ink-muted">{DAYS_FOR_CYCLE[p.billing_cycle] ?? 30} days</p>
                 </div>
               </button>
             );
@@ -560,7 +644,7 @@ function HealthStep({ form, set }: { form: NewMemberPayload; set: SetFn }) {
   );
 }
 
-function TrainingStep({ form, set, staff }: { form: NewMemberPayload; set: SetFn; staff: StaffDto[] }) {
+function TrainingStep({ form, set, staff }: { form: NewMemberPayload; set: SetFn; staff: StaffRow[] }) {
   const trainers = staff.filter((s) => s.role === "TRAINER" || s.role === "OWNER" || s.role === "ADMIN");
 
   return (
@@ -607,7 +691,7 @@ function TrainingStep({ form, set, staff }: { form: NewMemberPayload; set: SetFn
           <option value="">Unassigned</option>
           {trainers.map((t) => (
             <option key={t.id} value={t.id}>
-              {t.firstName} {t.lastName} · {t.role.toLowerCase()}
+              {t.first_name} {t.last_name} · {t.role.toLowerCase()}
             </option>
           ))}
         </select>

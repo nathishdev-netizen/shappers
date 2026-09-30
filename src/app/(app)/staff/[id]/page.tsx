@@ -149,7 +149,7 @@ export default function StaffDetailPage({ params }: PageProps<"/staff/[id]">) {
                         <Td><span className="text-ink-secondary">{sub?.membershipPlan.name ?? "—"}</span></Td>
                         <Td>{since === null ? <span className="text-ink-muted">Never</span>
                           : <span style={since >= 14 ? { color: "var(--status-critical)" } : undefined}>{since === 0 ? "Today" : `${since}d ago`}</span>}</Td>
-                        <Td><AccessPill access={c.access} /></Td>
+                        <Td><AccessPill access={{ ...c.access, validUntil: c.access.validUntil ? new Date(c.access.validUntil) : null, frozenUntil: c.access.frozenUntil ? new Date(c.access.frozenUntil) : null }} /></Td>
                         <Td><ChurnPill risk={c.churnRisk} compact /></Td>
                         <Td><Link href={`/members/${c.id}`}><ChevronRight size={15} className="text-ink-muted" /></Link></Td>
                       </tr>

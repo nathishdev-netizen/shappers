@@ -1,5 +1,7 @@
 import { ShieldCheck, ShieldX, Snowflake, Clock, Ban, CircleSlash, TriangleAlert } from "lucide-react";
-import type { AccessReason, AccessStatus, ChurnRisk } from "@/lib/api";
+import type { AccessStatus, ChurnRisk } from "@/lib/insights/member-insights";
+
+type AccessReason = AccessStatus["reason"];
 
 const ACCESS_META: Record<
   AccessReason,

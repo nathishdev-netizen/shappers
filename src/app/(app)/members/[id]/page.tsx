@@ -8,7 +8,11 @@ import {
   TrendingDown, TrendingUp, Clock, CheckCircle2, XCircle, CreditCard, UserRound, Pin,
   ScanLine, Check,
 } from "lucide-react";
-import { api, type MemberDetailDto, type TimelineEvent } from "@/lib/api";
+import { createClient } from "@/lib/supabase/client";
+import { getMember, checkInMember, recordPayment, addMemberNote, type MemberDetail, type Meal } from "@/lib/insights/members";
+import type { TimelineEvent } from "@/lib/insights/member-insights";
+import type { Database } from "@/lib/supabase/types";
+import { useTenant } from "@/lib/tenant-context";
 import { formatCurrency, formatDate, initials } from "@/lib/format";
 import { AccessPill, ChurnPill, accessMeta } from "@/components/access-badge";
 import { Drawer, Labelled, Pill, Toast } from "@/components/ui";
@@ -20,14 +24,14 @@ type Tab = (typeof TABS)[number];
 
 export default function MemberProfilePage({ params }: PageProps<"/members/[id]">) {
   const { id } = use(params);
-  const [member, setMember] = useState<MemberDetailDto | null>(null);
+  const [member, setMember] = useState<MemberDetail | null>(null);
   const [tab, setTab] = useState<Tab>("Membership & fees");
   const [notFound, setNotFound] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    api.getMember(id).then(setMember).catch(() => setNotFound(true));
+    getMember(createClient(), id).then(setMember).catch(() => setNotFound(true));
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
@@ -63,7 +67,7 @@ export default function MemberProfilePage({ params }: PageProps<"/members/[id]">
       />
       <RecordPaymentDrawer member={member} open={payOpen} onClose={() => setPayOpen(false)} onDone={async (msg) => {
         setPayOpen(false); setToast(msg); setTimeout(() => setToast(null), 3000);
-        setMember(await api.getMember(member.id));
+        setMember(await getMember(createClient(), member.id));
       }} />
       <Toast message={toast} />
 
@@ -103,7 +107,7 @@ export default function MemberProfilePage({ params }: PageProps<"/members/[id]">
 function MemberHeader({
   member, onRecordPayment, onCheckedIn,
 }: {
-  member: MemberDetailDto;
+  member: MemberDetail;
   onRecordPayment: () => void;
   onCheckedIn: (msg: string) => void;
 }) {
@@ -129,15 +133,15 @@ function MemberHeader({
               color: "var(--brand-on-tint)",
             }}
           >
-            {initials(member.firstName, member.lastName)}
+            {initials(member.first_name, member.last_name)}
           </span>
           <div>
             <h1 className="text-[22px] font-semibold tracking-tight text-ink">
-              {member.firstName} {member.lastName}
+              {member.first_name} {member.last_name}
             </h1>
             <p className="mt-1 text-sm text-ink-secondary">
-              Member since {formatDate(member.createdAt)}
-              {member.assignedTrainer && ` · Trainer: ${member.assignedTrainer.firstName} ${member.assignedTrainer.lastName}`}
+              Member since {formatDate(member.created_at)}
+              {member.assigned_trainer && ` · Trainer: ${member.assigned_trainer.first_name} ${member.assigned_trainer.last_name}`}
             </p>
             <div className="mt-2.5 flex flex-wrap items-center gap-2">
               <AccessPill access={member.access} />
@@ -203,23 +207,23 @@ function MemberHeader({
  */
 function CheckInPanel({
   member, onCheckedIn,
-}: { member: MemberDetailDto; onCheckedIn: (msg: string) => void }) {
+}: { member: MemberDetail; onCheckedIn: (msg: string) => void }) {
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // The API returns today's events already; a second tap would just log a duplicate.
   const today = new Date().toDateString();
-  const alreadyIn = member.attendanceEvents.some(
-    (e) => new Date(e.checkedInAt).toDateString() === today,
+  const alreadyIn = member.attendance_events.some(
+    (e) => new Date(e.checked_in_at).toDateString() === today,
   );
 
   async function checkIn() {
     setBusy(true);
     setError(null);
     try {
-      await api.checkIn(member.id);
-      onCheckedIn(`${member.firstName} checked in`);
+      await checkInMember(createClient(), member.id);
+      onCheckedIn(`${member.first_name} checked in`);
       setConfirming(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Check-in failed.");
@@ -285,7 +289,7 @@ function CheckInPanel({
   );
 }
 
-function RecordPaymentDrawer({ member, open, onClose, onDone }: { member: MemberDetailDto; open: boolean; onClose: () => void; onDone: (msg: string) => void }) {
+function RecordPaymentDrawer({ member, open, onClose, onDone }: { member: MemberDetail; open: boolean; onClose: () => void; onDone: (msg: string) => void }) {
   const [amount, setAmount] = useState(member.outstandingCents / 100);
   const [method, setMethod] = useState("UPI");
   const [note, setNote] = useState("");
@@ -296,13 +300,13 @@ function RecordPaymentDrawer({ member, open, onClose, onDone }: { member: Member
   async function submit() {
     setSaving(true);
     try {
-      const r = await api.recordPayment({ memberId: member.id, amountCents: Math.round(amount * 100), method, note: note || undefined });
+      const r = await recordPayment(createClient(), member.id, Math.round(amount * 100), method as Database["public"]["Enums"]["payment_method"], note || undefined);
       onDone(`${formatCurrency(Math.round(amount * 100))} recorded · ${r.invoiceNumber}${r.balanceCleared ? " · balance cleared" : ""}`);
     } finally { setSaving(false); }
   }
 
   return (
-    <Drawer open={open} onClose={onClose} title="Record a payment" subtitle={`${member.firstName} owes ${formatCurrency(member.outstandingCents)}`}
+    <Drawer open={open} onClose={onClose} title="Record a payment" subtitle={`${member.first_name} owes ${formatCurrency(member.outstandingCents)}`}
       footer={<div className="flex justify-end gap-2"><button onClick={onClose} className="btn-ghost">Cancel</button><button onClick={submit} disabled={saving || amount <= 0} className="btn-brand">{saving ? "Saving…" : "Confirm payment"}</button></div>}>
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
@@ -323,7 +327,7 @@ function RecordPaymentDrawer({ member, open, onClose, onDone }: { member: Member
   );
 }
 
-function TrainingTab({ member }: { member: MemberDetailDto }) {
+function TrainingTab({ member }: { member: MemberDetail }) {
   const pt = member.ptSummary;
   const diet = member.activeDietPlan;
   const humanize = (v: string | null) => v ? v.charAt(0) + v.slice(1).toLowerCase().replace(/_/g, " ") : null;
@@ -342,7 +346,7 @@ function TrainingTab({ member }: { member: MemberDetailDto }) {
                   <span className="unit">left</span>
                 </Ring>
                 <div className="flex-1 space-y-2">
-                  <Row label="Trainer" value={member.assignedTrainer ? `${member.assignedTrainer.firstName} ${member.assignedTrainer.lastName}` : null} />
+                  <Row label="Trainer" value={member.assigned_trainer ? `${member.assigned_trainer.first_name} ${member.assigned_trainer.last_name}` : null} />
                   <Row label="Purchased" value={`${pt.purchased} sessions`} />
                   <Row label="Completed" value={`${pt.used}`} />
                   <Row label="Booked ahead" value={`${pt.scheduled}`} />
@@ -356,18 +360,18 @@ function TrainingTab({ member }: { member: MemberDetailDto }) {
                     {member.upcomingSessions.map((s) => (
                       <li key={s.id} className="flex items-center justify-between rounded-lg px-3 py-2 text-[13px]" style={{ backgroundColor: "var(--surface-sunken)" }}>
                         <span className="text-ink">{s.focus ?? "Session"}</span>
-                        <span className="text-xs text-ink-muted">{new Date(s.scheduledAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</span>
+                        <span className="text-xs text-ink-muted">{new Date(s.scheduled_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</span>
                       </li>
                     ))}
                   </ul>
                 </div>
               )}
-              {member.ptPackages[0]?.sessions.filter((s) => s.status === "COMPLETED" && s.notes).slice(0, 3).length > 0 && (
+              {member.pt_packages[0]?.sessions.filter((s) => s.status === "COMPLETED" && s.notes).slice(0, 3).length > 0 && (
                 <div className="mt-5">
                   <p className="mb-2 text-xs font-medium text-ink-secondary">Trainer notes</p>
                   <ul className="space-y-1.5">
-                    {member.ptPackages[0].sessions.filter((s) => s.status === "COMPLETED" && s.notes).slice(0, 3).map((s) => (
-                      <li key={s.id} className="text-[13px] text-ink-secondary"><span className="text-ink-muted">{formatDate(s.scheduledAt)} · </span>{s.notes}</li>
+                    {member.pt_packages[0].sessions.filter((s) => s.status === "COMPLETED" && s.notes).slice(0, 3).map((s) => (
+                      <li key={s.id} className="text-[13px] text-ink-secondary"><span className="text-ink-muted">{formatDate(s.scheduled_at)} · </span>{s.notes}</li>
                     ))}
                   </ul>
                 </div>
@@ -387,12 +391,12 @@ function TrainingTab({ member }: { member: MemberDetailDto }) {
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: "var(--brand)" }}>{humanize(diet.goal)}</p>
                   <p className="mt-0.5 text-[16px] font-semibold text-ink">{diet.title}</p>
-                  <p className="text-xs text-ink-muted">{diet.trainer ? `Set by ${diet.trainer.firstName}` : "Trainer not set"} · from {formatDate(diet.startDate)}</p>
+                  <p className="text-xs text-ink-muted">{diet.trainer ? `Set by ${diet.trainer.first_name}` : "Trainer not set"} · from {formatDate(diet.start_date)}</p>
                 </div>
                 <Pill tone="good">Active</Pill>
               </div>
               <div className="mt-4 grid grid-cols-4 gap-2">
-                {[["kcal", diet.dailyCalories, true], ["Protein", diet.proteinG, false], ["Carbs", diet.carbsG, false], ["Fat", diet.fatG, false]].map(([l, v, a]) => (
+                {[["kcal", diet.daily_calories, true], ["Protein", diet.protein_g, false], ["Carbs", diet.carbs_g, false], ["Fat", diet.fat_g, false]].map(([l, v, a]) => (
                   <div key={String(l)} className="rounded-lg p-2.5 text-center" style={{ backgroundColor: a ? "var(--brand-soft)" : "var(--surface-sunken)" }}>
                     <p className="stat-figure text-[18px] font-semibold" style={{ color: a ? "var(--brand)" : "var(--ink)" }}>{String(v ?? "—")}</p>
                     <p className="text-[10px] text-ink-muted">{String(l)}{!a && v ? " (g)" : ""}</p>
@@ -400,7 +404,7 @@ function TrainingTab({ member }: { member: MemberDetailDto }) {
                 ))}
               </div>
               <ul className="mt-4 space-y-1.5">
-                {(diet.meals ?? []).map((m, i) => (
+                {((diet.meals as unknown as Meal[]) ?? []).map((m, i) => (
                   <li key={i} className="flex gap-3 text-[13px]">
                     <span className="w-16 shrink-0 text-xs text-ink-muted">{m.time}</span>
                     <span className="min-w-0 flex-1"><span className="text-ink">{m.name}</span><span className="text-ink-muted"> · {m.items.join(", ")}</span></span>
@@ -458,7 +462,7 @@ function humanize(value: string | null) {
   return value.charAt(0) + value.slice(1).toLowerCase().replace(/_/g, " ");
 }
 
-function OverviewTab({ member }: { member: MemberDetailDto }) {
+function OverviewTab({ member }: { member: MemberDetail }) {
   const sub = member.subscriptions[0];
 
   return (
@@ -466,40 +470,40 @@ function OverviewTab({ member }: { member: MemberDetailDto }) {
       <Card title="Contact & identity" icon={UserRound}>
         <div className="divide-y divide-hairline">
           <Row icon={Phone} label="Phone" value={member.phone} />
-          <Row label="Alternate phone" value={member.alternatePhone} />
+          <Row label="Alternate phone" value={member.alternate_phone} />
           <Row icon={Mail} label="Email" value={member.email} />
-          <Row label="Preferred contact" value={humanize(member.preferredContact)} />
-          <Row icon={Cake} label="Date of birth" value={member.dateOfBirth && formatDate(member.dateOfBirth)} />
+          <Row label="Preferred contact" value={humanize(member.preferred_contact)} />
+          <Row icon={Cake} label="Date of birth" value={member.date_of_birth && formatDate(member.date_of_birth)} />
           <Row label="Gender" value={humanize(member.gender)} />
           <Row icon={Briefcase} label="Occupation" value={member.occupation} />
           <Row
             icon={MapPin}
             label="Address"
-            value={[member.addressLine, member.city, member.state, member.postalCode].filter(Boolean).join(", ")}
+            value={[member.address_line, member.city, member.state, member.postal_code].filter(Boolean).join(", ")}
           />
           <Row
             icon={IdCard}
             label="ID proof"
             value={
-              member.idProofType ? (
+              member.id_proof_type ? (
                 <span>
-                  {humanize(member.idProofType)} ···· {member.idProofLast4}
+                  {humanize(member.id_proof_type)} ···· {member.id_proof_last4}
                   <span className="ml-2 text-xs text-ink-muted">(full number not stored)</span>
                 </span>
               ) : null
             }
           />
-          <Row label="Access card" value={member.accessCardNumber} />
+          <Row label="Access card" value={member.access_card_number} />
         </div>
       </Card>
 
       <div className="space-y-5">
         <Card title="Emergency contact" icon={AlertTriangle}>
-          {member.emergencyName ? (
+          {member.emergency_name ? (
             <div className="divide-y divide-hairline">
-              <Row label="Name" value={member.emergencyName} />
-              <Row label="Relationship" value={member.emergencyRelationship} />
-              <Row icon={Phone} label="Phone" value={member.emergencyPhone} />
+              <Row label="Name" value={member.emergency_name} />
+              <Row label="Relationship" value={member.emergency_relationship} />
+              <Row icon={Phone} label="Phone" value={member.emergency_phone} />
             </div>
           ) : (
             <p className="rounded-lg p-3 text-[13px]" style={{ backgroundColor: "color-mix(in srgb, var(--status-critical) 8%, transparent)", color: "var(--status-critical)" }}>
@@ -510,10 +514,10 @@ function OverviewTab({ member }: { member: MemberDetailDto }) {
 
         <Card title="Membership" icon={CalendarClock}>
           <div className="divide-y divide-hairline">
-            <Row label="Plan" value={sub?.membershipPlan.name} />
-            <Row label="Fee" value={sub && formatCurrency(sub.membershipPlan.priceCents)} />
-            <Row label="Billing" value={humanize(sub?.membershipPlan.billingCycle ?? null)} />
-            <Row label="Renews / expires" value={sub && formatDate(sub.currentPeriodEnd)} />
+            <Row label="Plan" value={sub?.membership_plan.name} />
+            <Row label="Fee" value={sub && formatCurrency(sub.membership_plan.price_cents)} />
+            <Row label="Billing" value={humanize(sub?.membership_plan.billing_cycle ?? null)} />
+            <Row label="Renews / expires" value={sub && formatDate(sub.current_period_end)} />
             <Row label="Outstanding" value={member.outstandingCents > 0
               ? <span style={{ color: "var(--status-critical)" }}>{formatCurrency(member.outstandingCents)}</span>
               : "Nothing due"} />
@@ -522,9 +526,9 @@ function OverviewTab({ member }: { member: MemberDetailDto }) {
 
         <Card title="Training" icon={Dumbbell}>
           <div className="divide-y divide-hairline">
-            <Row label="Goal" value={humanize(member.primaryGoal)} />
-            <Row label="Experience" value={humanize(member.experienceLevel)} />
-            <Row label="Assigned trainer" value={member.assignedTrainer && `${member.assignedTrainer.firstName} ${member.assignedTrainer.lastName}`} />
+            <Row label="Goal" value={humanize(member.primary_goal)} />
+            <Row label="Experience" value={humanize(member.experience_level)} />
+            <Row label="Assigned trainer" value={member.assigned_trainer && `${member.assigned_trainer.first_name} ${member.assigned_trainer.last_name}`} />
             <Row
               label="PT sessions"
               value={member.ptSummary.purchased > 0
@@ -547,7 +551,7 @@ const STATUS_COLOR = {
   critical: "var(--status-critical)", neutral: "var(--ink-muted)",
 } as const;
 
-function FeeSummary({ member }: { member: MemberDetailDto }) {
+function FeeSummary({ member }: { member: MemberDetail }) {
   const ps = member.paymentSummary;
   const settled = ps.outstandingCents === 0;
 
@@ -602,7 +606,7 @@ function Money({ label, value, tone }: { label: string; value: number; tone?: "g
   );
 }
 
-function MembershipTab({ member }: { member: MemberDetailDto }) {
+function MembershipTab({ member }: { member: MemberDetail }) {
   const sub = member.subscriptions[0];
   const payments = member.subscriptions.flatMap((s) => s.payments ?? []);
 
@@ -622,10 +626,10 @@ function MembershipTab({ member }: { member: MemberDetailDto }) {
       <div className="space-y-5">
         <Card title="Current plan" icon={Wallet}>
           <div className="divide-y divide-hairline">
-            <Row label="Plan" value={sub?.membershipPlan.name} />
+            <Row label="Plan" value={sub?.membership_plan.name} />
             <Row label="Status" value={<AccessPill access={member.access} />} />
-            <Row label="Started" value={sub && formatDate(sub.startDate)} />
-            <Row label="Valid until" value={sub && formatDate(sub.currentPeriodEnd)} />
+            <Row label="Started" value={sub && formatDate(sub.start_date)} />
+            <Row label="Valid until" value={sub && formatDate(sub.current_period_end)} />
             <Row
               label="Days remaining"
               value={member.access.daysRemaining !== null
@@ -650,10 +654,10 @@ function MembershipTab({ member }: { member: MemberDetailDto }) {
                   <li key={p.id} className="flex items-center gap-3 py-2.5">
                     <Icon size={15} strokeWidth={2.2} style={{ color }} className="shrink-0" />
                     <div className="min-w-0 flex-1">
-                      <p className="text-[13px] text-ink">{formatCurrency(p.amountCents)}</p>
+                      <p className="text-[13px] text-ink">{formatCurrency(p.amount_cents)}</p>
                       <p className="text-xs text-ink-muted">
                         {p.method ? `${humanize(p.method)} · ` : ""}
-                        {p.paidAt ? formatDate(p.paidAt) : p.dueAt ? `due ${formatDate(p.dueAt)}` : "—"}
+                        {p.paid_at ? formatDate(p.paid_at) : p.due_at ? `due ${formatDate(p.due_at)}` : "—"}
                       </p>
                     </div>
                     <span className="shrink-0 text-xs font-medium" style={{ color }}>{humanize(p.status)}</span>
@@ -701,7 +705,7 @@ function TimelineRow({ event }: { event: TimelineEvent }) {
   );
 }
 
-function AttendanceTab({ member }: { member: MemberDetailDto }) {
+function AttendanceTab({ member }: { member: MemberDetail }) {
   const { visits } = member;
   const trendDown = (visits.trendPercent ?? 0) < 0;
 
@@ -755,15 +759,15 @@ function AttendanceTab({ member }: { member: MemberDetailDto }) {
       </div>
 
       <Card title="Recent check-ins" icon={CalendarClock}>
-        {member.attendanceEvents.length === 0 ? (
+        {member.attendance_events.length === 0 ? (
           <p className="py-8 text-center text-sm text-ink-muted">No check-ins recorded.</p>
         ) : (
           <ul className="max-h-[420px] divide-y divide-hairline overflow-auto">
-            {member.attendanceEvents.map((e) => (
+            {member.attendance_events.map((e) => (
               <li key={e.id} className="flex items-center justify-between py-2.5 text-[13px]">
-                <span className="text-ink">{formatDate(e.checkedInAt)}</span>
+                <span className="text-ink">{formatDate(e.checked_in_at)}</span>
                 <span className="text-xs text-ink-muted">
-                  {new Date(e.checkedInAt).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}
+                  {new Date(e.checked_in_at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}
                   {" · "}{humanize(e.source)}
                 </span>
               </li>
@@ -775,21 +779,21 @@ function AttendanceTab({ member }: { member: MemberDetailDto }) {
   );
 }
 
-function HealthTab({ member }: { member: MemberDetailDto }) {
-  const missingParq = !member.parqCompletedAt;
-  const missingWaiver = !member.waiverSignedAt;
+function HealthTab({ member }: { member: MemberDetail }) {
+  const missingParq = !member.parq_completed_at;
+  const missingWaiver = !member.waiver_signed_at;
 
   return (
     <div className="grid gap-5 lg:grid-cols-2">
       <Card title="Medical screening" icon={HeartPulse}>
         <div className="divide-y divide-hairline">
-          <Row label="Conditions" value={member.medicalConditions} />
+          <Row label="Conditions" value={member.medical_conditions} />
           <Row label="Allergies" value={member.allergies} />
           <Row label="Medications" value={member.medications} />
           <Row label="Injuries / limitations" value={member.injuries} />
           <Row
             label="Physician clearance"
-            value={member.physicianClearance
+            value={member.physician_clearance
               ? <span style={{ color: "var(--status-good)" }}>On file</span>
               : <span className="text-ink-muted">Not required</span>}
           />
@@ -798,8 +802,8 @@ function HealthTab({ member }: { member: MemberDetailDto }) {
 
       <Card title="Compliance" icon={ShieldCheck}>
         <div className="space-y-3">
-          <ComplianceRow label="PAR-Q health questionnaire" done={!missingParq} at={member.parqCompletedAt} />
-          <ComplianceRow label="Liability waiver signed" done={!missingWaiver} at={member.waiverSignedAt} />
+          <ComplianceRow label="PAR-Q health questionnaire" done={!missingParq} at={member.parq_completed_at} />
+          <ComplianceRow label="Liability waiver signed" done={!missingWaiver} at={member.waiver_signed_at} />
         </div>
 
         {(missingParq || missingWaiver) && (
@@ -829,25 +833,25 @@ function ComplianceRow({ label, done, at }: { label: string; done: boolean; at: 
   );
 }
 
-function ProgressTab({ member }: { member: MemberDetailDto }) {
+function ProgressTab({ member }: { member: MemberDetail }) {
   const latest = member.latestMeasurement;
   const history = member.measurements;
   const first = history[history.length - 1];
-  const weightChange = latest?.weightKg && first?.weightKg
-    ? Math.round((latest.weightKg - first.weightKg) * 10) / 10
+  const weightChange = latest?.weight_kg && first?.weight_kg
+    ? Math.round((latest.weight_kg - first.weight_kg) * 10) / 10
     : null;
 
   return (
     <div className="grid gap-5 lg:grid-cols-[1fr_1.2fr]">
       <Card title="Current metrics" icon={Ruler}>
         <div className="divide-y divide-hairline">
-          <Row icon={Target} label="Goal" value={humanize(member.primaryGoal)} />
-          <Row label="Height" value={member.heightCm && `${member.heightCm} cm`} />
-          <Row label="Weight" value={latest?.weightKg && `${latest.weightKg} kg`} />
+          <Row icon={Target} label="Goal" value={humanize(member.primary_goal)} />
+          <Row label="Height" value={member.height_cm && `${member.height_cm} cm`} />
+          <Row label="Weight" value={latest?.weight_kg && `${latest.weight_kg} kg`} />
           <Row label="BMI" value={member.bmi} />
-          <Row label="Body fat" value={latest?.bodyFatPercent && `${latest.bodyFatPercent}%`} />
-          <Row label="Waist" value={latest?.waistCm && `${latest.waistCm} cm`} />
-          <Row label="Chest" value={latest?.chestCm && `${latest.chestCm} cm`} />
+          <Row label="Body fat" value={latest?.body_fat_percent && `${latest.body_fat_percent}%`} />
+          <Row label="Waist" value={latest?.waist_cm && `${latest.waist_cm} cm`} />
+          <Row label="Chest" value={latest?.chest_cm && `${latest.chest_cm} cm`} />
           <Row
             label="Since first record"
             value={weightChange !== null ? (
@@ -875,10 +879,10 @@ function ProgressTab({ member }: { member: MemberDetailDto }) {
             <tbody className="tabular-nums">
               {history.map((m) => (
                 <tr key={m.id} className="border-b border-hairline/60 last:border-0">
-                  <td className="py-2 text-ink-secondary">{formatDate(m.recordedAt)}</td>
-                  <td className="py-2 text-right text-ink">{m.weightKg ? `${m.weightKg} kg` : "—"}</td>
-                  <td className="py-2 text-right text-ink">{m.bodyFatPercent ? `${m.bodyFatPercent}%` : "—"}</td>
-                  <td className="py-2 text-right text-ink">{m.waistCm ? `${m.waistCm} cm` : "—"}</td>
+                  <td className="py-2 text-ink-secondary">{formatDate(m.recorded_at)}</td>
+                  <td className="py-2 text-right text-ink">{m.weight_kg ? `${m.weight_kg} kg` : "—"}</td>
+                  <td className="py-2 text-right text-ink">{m.body_fat_percent ? `${m.body_fat_percent}%` : "—"}</td>
+                  <td className="py-2 text-right text-ink">{m.waist_cm ? `${m.waist_cm} cm` : "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -889,17 +893,19 @@ function ProgressTab({ member }: { member: MemberDetailDto }) {
   );
 }
 
-function NotesTab({ member, onChange }: { member: MemberDetailDto; onChange: (m: MemberDetailDto) => void }) {
+function NotesTab({ member, onChange }: { member: MemberDetail; onChange: (m: MemberDetail) => void }) {
+  const { tenant, user } = useTenant();
   const [body, setBody] = useState("");
   const [saving, setSaving] = useState(false);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
-    if (!body.trim()) return;
+    if (!body.trim() || !tenant || !user) return;
     setSaving(true);
     try {
-      await api.addNote(member.id, body.trim());
-      const refreshed = await api.getMember(member.id);
+      const supabase = createClient();
+      await addMemberNote(supabase, tenant.id, member.id, user.userId, body.trim());
+      const refreshed = await getMember(supabase, member.id);
       onChange(refreshed);
       setBody("");
     } finally {
@@ -930,19 +936,19 @@ function NotesTab({ member, onChange }: { member: MemberDetailDto; onChange: (m:
         </form>
       </Card>
 
-      <Card title={`Notes (${member.memberNotes.length})`} icon={StickyNote}>
-        {member.memberNotes.length === 0 ? (
+      <Card title={`Notes (${member.member_notes.length})`} icon={StickyNote}>
+        {member.member_notes.length === 0 ? (
           <p className="py-8 text-center text-sm text-ink-muted">No notes yet.</p>
         ) : (
           <ul className="divide-y divide-hairline">
-            {member.memberNotes.map((note) => (
+            {member.member_notes.map((note) => (
               <li key={note.id} className="py-3">
                 <div className="flex items-start gap-2">
                   {note.pinned && <Pin size={13} strokeWidth={2.2} className="mt-1 shrink-0" style={{ color: "var(--brand)" }} />}
                   <div className="min-w-0 flex-1">
                     <p className="text-[13px] text-ink">{note.body}</p>
                     <p className="mt-1 text-xs text-ink-muted">
-                      {note.author ? `${note.author.firstName} ${note.author.lastName}` : "System"} · {formatDate(note.createdAt)}
+                      {note.author ? `${note.author.first_name} ${note.author.last_name}` : "System"} · {formatDate(note.created_at)}
                     </p>
                   </div>
                 </div>

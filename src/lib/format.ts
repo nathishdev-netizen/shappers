@@ -15,8 +15,8 @@ export function formatCompactCurrency(cents: number, currency = "INR"): string {
   }).format(cents / 100);
 }
 
-export function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+export function formatDate(date: string | Date): string {
+  return new Date(date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
 export function formatShortDay(iso: string): string {
@@ -36,8 +36,8 @@ export function initials(firstName: string, lastName: string): string {
   return `${firstName[0] ?? ""}${lastName[0] ?? ""}`.toUpperCase();
 }
 
-export function daysUntil(iso: string): number {
-  const target = new Date(iso);
+export function daysUntil(date: string | Date): number {
+  const target = new Date(date);
   target.setHours(0, 0, 0, 0);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
