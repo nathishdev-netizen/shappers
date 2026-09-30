@@ -1,4 +1,3 @@
-packages:
-  - "apps/api"
-  - "apps/admin-web"
-  - "packages/*"
+ignoredBuiltDependencies:
+  - sharp
+  - unrs-resolver
