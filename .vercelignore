@@ -1,20 +1,12 @@
-# Vercel only builds apps/admin-web and apps/api (see the services in vercel.json).
-# Everything below is either irrelevant to those or rebuilt on their servers.
+# Vercel only needs the Next.js app itself (see vercel.json). Everything
+# below is either irrelevant to that build or rebuilt on Vercel's servers.
 
 node_modules
 **/node_modules
 **/.next
 **/dist
 
-# The mobile app never runs on Vercel, and its Android build output alone is
-# over a gigabyte of compiled native code.
-apps/mobile
-
-# Source artwork; the apps import only the processed PNGs under public/ and assets/.
+# Source artwork; the app imports only the processed PNGs under public/.
 BRAND LOGO SHAPER
 
-infra
-**/*.apk
-**/*.aab
 .git
-.expo

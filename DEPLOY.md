@@ -1,143 +1,41 @@
 # Deploying SHAPER
 
-Two accounts, one domain:
-
-| Piece | Host | Notes |
-|---|---|---|
-| PostgreSQL | **Supabase** | free tier, always available |
-| Web + API | **Vercel** | one project, one URL, via [Services](https://vercel.com/docs/services) |
-
-`vercel.json` at the repo root declares both halves as services, so
-`https://your-app.vercel.app` serves the site and `/api/*` reaches the NestJS
-server. They share an origin, which means **there is no CORS to configure**.
-
-> Vercel Services is in beta and may need enabling on your account. If it is not
-> available, see [Fallback](#fallback-api-on-railway) at the bottom — the same
-> Docker image runs on Railway or Render unchanged.
-
----
+One app, one service: a Next.js app on Vercel talking directly to Supabase. No API
+container, no Docker image, no CORS to configure.
 
 ## 1. Database — Supabase
 
-1. Create a project at [supabase.com](https://supabase.com). Save the database
-   password it generates; you cannot read it back later.
-2. **Project Settings → Database → Connection string → URI**, and copy two of them:
+Already set up for this project (ref `nxgcwljzaqdthfbgesbh`). For a new project:
 
-   | Which | Port | Used for |
-   |---|---|---|
-   | **Transaction pooler** | `6543` | `DATABASE_URL` — every normal query |
-   | **Direct connection** | `5432` | `DIRECT_URL` — migrations only |
+1. Create a project at [supabase.com](https://supabase.com).
+2. Install the CLI and link it: `brew install supabase/tap/supabase` (or download the
+   binary from the [releases page](https://github.com/supabase/cli/releases) — no
+   Homebrew/Xcode license needed), then `supabase link --project-ref <your-ref>`.
+3. Push the schema: `supabase db push` — applies everything in `supabase/migrations/`
+   (tables, RLS policies, business-logic RPCs).
+4. In the dashboard, go to **Authentication → Hooks (Beta) → Custom Access Token** and
+   select `custom_access_token_hook` (this one step can't be done via SQL/CLI).
+5. Seed demo data: `node supabase/seed.mjs` (reads `.env.local`).
 
-Both are needed, and the distinction matters:
+## 2. Web app — Vercel
 
-- Serverless containers each open their own connection, so the **pooled** URL is
-  what keeps Postgres from running out of connections under load.
-- Migrations need the **direct** URL: the pooler runs in transaction mode and
-  cannot execute the advisory locks and DDL that Prisma migrations use.
+Import the repo at [vercel.com/new](https://vercel.com/new). Root directory stays the
+repository root — `vercel.json` handles the rest (it's a plain Next.js app now).
 
-Append `?pgbouncer=true&connection_limit=1` to the pooled URL.
-
----
-
-## 2. Web + API — Vercel
-
-Import `nathishdev-netizen/shappers` at [vercel.com/new](https://vercel.com/new).
-Leave the root directory as the repository root — the root `vercel.json` handles
-the rest.
-
-Environment variables:
+Environment variables (Project Settings → Environment Variables):
 
 | Name | Value |
 |---|---|
-| `DATABASE_URL` | Supabase pooled URL (port 6543) |
-| `DIRECT_URL` | Supabase direct URL (port 5432) |
-| `JWT_ACCESS_SECRET` | `openssl rand -base64 32` |
-| `JWT_ACCESS_EXPIRES_IN` | `12h` |
-| `NEXT_PUBLIC_API_URL` | `/api` |
+| `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | The `publishable`/`anon` key (Project Settings → API) |
+| `SUPABASE_SECRET_KEY` | The `secret`/`service_role` key — server-only, never exposed to the client |
 
-`NEXT_PUBLIC_API_URL` is a **relative** path on purpose: the API is served from
-the same domain, so the browser calls `/api/...` with no cross-origin request at
-all. It is also inlined at build time, so changing it later needs a redeploy
-rather than a restart.
-
-Deploy. The API container runs `prisma migrate deploy` on boot, so the Supabase
-schema is created automatically.
-
-### Check it
-
-```bash
-curl -i https://<your-app>.vercel.app/api/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"subdomain":"x","email":"x@y.z","password":"x"}'
-```
-
-A **401** is the correct answer — it proves the API booted and reached the
-database. A 404 means the rewrite is not matching; a 500 means the database
-variables are wrong.
-
----
-
-## 3. Seed the demo data
-
-Supabase starts empty. From your Mac, pointed at it:
-
-```bash
-cd apps/api
-DATABASE_URL='<pooled url>' DIRECT_URL='<direct url>' pnpm run seed
-```
-
-That creates the club, 28 members, staff, plans, payments and attendance.
-Re-running is safe — it only deletes and recreates the demo tenants.
-
-Then sign in:
-
-```
-subdomain  shaper
-email      owner@shaper.fit
-password   Password123!
-```
-
----
-
-## 4. Point the Android app at it
-
-The APK has its API URL compiled in, so switching it to the hosted API is a
-rebuild:
-
-```bash
-cd apps/mobile/android
-EXPO_PUBLIC_API_URL="https://<your-app>.vercel.app/api" ./gradlew assembleRelease
-```
-
-Output: `app/build/outputs/apk/release/app-release.apk`.
-
-Because the hosted API is HTTPS, you can now drop the cleartext allowance from
-`apps/mobile/app.json` (`expo-build-properties` → `usesCleartextTraffic`). It
-only ever existed to permit plain-HTTP traffic to a laptop on the local network.
-
----
-
-## Fallback: API on Railway
-
-If Services is unavailable, run the web app on Vercel by itself and put the API
-on Railway with the same Dockerfile:
-
-1. Railway → *Deploy from GitHub repo* → **Root Directory**: `apps/api`
-   (the Dockerfile is self-contained and builds from that folder).
-2. Set `DATABASE_URL`, `DIRECT_URL`, `JWT_ACCESS_SECRET`, `JWT_ACCESS_EXPIRES_IN`.
-3. Generate a domain.
-4. On Vercel set `NEXT_PUBLIC_API_URL` to `https://<railway-domain>/api` — an
-   absolute URL this time, since the origins now differ.
-5. Set `CORS_ORIGIN` on Railway to your Vercel URL, because cross-origin requests
-   now need to be allowed explicitly.
-
----
+Deploy. There's no migration step on boot — the schema already lives in Supabase,
+managed via `supabase db push` from your machine (or a CI step, if you want that later).
 
 ## Costs and gotchas
 
-- **Supabase** free projects pause after a week of inactivity; opening the
-  dashboard wakes them. Check it the day before a demo.
-- **Vercel** container services consume build minutes; the free tier is fine for
-  a demo but not for constant redeploys.
-- The seed wipes and recreates the demo tenants, so never point it at a database
-  holding anything real.
+- **Supabase** free projects pause after a week of inactivity; opening the dashboard
+  wakes them. Check it the day before a demo.
+- `supabase/seed.mjs` is idempotent (looks up existing rows by email/subdomain) but still
+  writes real rows — don't point it at a project holding real customer data.
