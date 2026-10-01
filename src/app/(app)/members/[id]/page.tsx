@@ -136,8 +136,13 @@ function MemberHeader({
             {initials(member.first_name, member.last_name)}
           </span>
           <div>
-            <h1 className="text-[22px] font-semibold tracking-tight text-ink">
+            <h1 className="flex items-center gap-2 text-[22px] font-semibold tracking-tight text-ink">
               {member.first_name} {member.last_name}
+              {member.member_code && (
+                <span className="rounded-md px-1.5 py-0.5 font-mono text-[12px] font-medium" style={{ backgroundColor: "var(--surface-sunken)", color: "var(--ink-secondary)" }}>
+                  {member.member_code}
+                </span>
+              )}
             </h1>
             <p className="mt-1 text-sm text-ink-secondary">
               Member since {formatDate(member.created_at)}
@@ -469,6 +474,7 @@ function OverviewTab({ member }: { member: MemberDetail }) {
     <div className="grid gap-5 lg:grid-cols-2">
       <Card title="Contact & identity" icon={UserRound}>
         <div className="divide-y divide-hairline">
+          <Row label="Member ID" value={member.member_code} />
           <Row icon={Phone} label="Phone" value={member.phone} />
           <Row label="Alternate phone" value={member.alternate_phone} />
           <Row icon={Mail} label="Email" value={member.email} />

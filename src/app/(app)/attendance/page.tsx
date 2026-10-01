@@ -48,7 +48,7 @@ export default function AttendancePage() {
     const q = query.trim().toLowerCase();
     if (!q) return members.slice(0, 8);
     return members
-      .filter((m) => `${m.first_name} ${m.last_name} ${m.email}`.toLowerCase().includes(q))
+      .filter((m) => `${m.first_name} ${m.last_name} ${m.email} ${m.phone ?? ""} ${m.member_code ?? ""}`.toLowerCase().includes(q))
       .slice(0, 8);
   }, [members, query]);
 
@@ -72,7 +72,7 @@ export default function AttendancePage() {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search members"
+              placeholder="Search by name, member ID or phone"
               className="w-full rounded-lg border border-hairline bg-surface py-2 pl-9 pr-3 text-sm text-ink outline-none focus:ring-2"
               style={{ ["--tw-ring-color" as string]: "color-mix(in srgb, var(--brand) 35%, transparent)" }}
             />
@@ -88,7 +88,7 @@ export default function AttendancePage() {
                   <p className="truncate text-sm font-medium text-ink">
                     {member.first_name} {member.last_name}
                   </p>
-                  <p className="truncate text-xs text-ink-muted">{member.email}</p>
+                  <p className="truncate text-xs text-ink-muted">{member.member_code ?? member.email}{member.phone ? ` · ${member.phone}` : ""}</p>
                 </div>
                 <button
                   onClick={() => handleCheckIn(member.id)}

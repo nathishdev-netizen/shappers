@@ -18,7 +18,7 @@ export type Database = {
         Row: {
           checked_in_at: string
           id: string
-          local_date: string
+          local_date: string | null
           member_id: string
           source: Database["public"]["Enums"]["attendance_source"]
           tenant_id: string
@@ -26,7 +26,7 @@ export type Database = {
         Insert: {
           checked_in_at?: string
           id?: string
-          local_date?: string
+          local_date?: string | null
           member_id: string
           source?: Database["public"]["Enums"]["attendance_source"]
           tenant_id: string
@@ -34,7 +34,7 @@ export type Database = {
         Update: {
           checked_in_at?: string
           id?: string
-          local_date?: string
+          local_date?: string | null
           member_id?: string
           source?: Database["public"]["Enums"]["attendance_source"]
           tenant_id?: string
@@ -527,6 +527,7 @@ export type Database = {
           last_name: string
           medical_conditions: string | null
           medications: string | null
+          member_code: string | null
           notes: string | null
           occupation: string | null
           parq_completed_at: string | null
@@ -571,6 +572,7 @@ export type Database = {
           last_name: string
           medical_conditions?: string | null
           medications?: string | null
+          member_code?: string | null
           notes?: string | null
           occupation?: string | null
           parq_completed_at?: string | null
@@ -615,6 +617,7 @@ export type Database = {
           last_name?: string
           medical_conditions?: string | null
           medications?: string | null
+          member_code?: string | null
           notes?: string | null
           occupation?: string | null
           parq_completed_at?: string | null
@@ -1070,6 +1073,7 @@ export type Database = {
       }
       tenants: {
         Row: {
+          code: string | null
           colors: Json | null
           created_at: string
           id: string
@@ -1079,6 +1083,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          code?: string | null
           colors?: Json | null
           created_at?: string
           id?: string
@@ -1088,6 +1093,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          code?: string | null
           colors?: Json | null
           created_at?: string
           id?: string
@@ -1174,7 +1180,7 @@ export type Database = {
         Returns: {
           checked_in_at: string
           id: string
-          local_date: string
+          local_date: string | null
           member_id: string
           source: Database["public"]["Enums"]["attendance_source"]
           tenant_id: string
@@ -1251,6 +1257,7 @@ export type Database = {
           last_name: string
           medical_conditions: string | null
           medications: string | null
+          member_code: string | null
           notes: string | null
           occupation: string | null
           parq_completed_at: string | null

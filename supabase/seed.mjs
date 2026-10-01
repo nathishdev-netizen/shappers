@@ -79,10 +79,13 @@ const MEALS = [
   { time: "8:00 PM", name: "Dinner", items: ["Paneer / fish 150g", "2 rotis", "Dal", "Cucumber salad"], calories: 600 },
 ];
 
-async function upsertTenant(name, subdomain, colors) {
+async function upsertTenant(name, subdomain, colors, code) {
   const { data: existing } = await supabase.from("tenants").select("id").eq("subdomain", subdomain).maybeSingle();
-  if (existing) return existing.id;
-  const { data, error } = await supabase.from("tenants").insert({ name, subdomain, colors }).select("id").single();
+  if (existing) {
+    await supabase.from("tenants").update({ code }).eq("id", existing.id);
+    return existing.id;
+  }
+  const { data, error } = await supabase.from("tenants").insert({ name, subdomain, colors, code }).select("id").single();
   if (error) throw error;
   return data.id;
 }
@@ -137,7 +140,7 @@ async function wipeTenantData(tenantId) {
 
 async function main() {
   console.log("Seeding tenant: shaper");
-  const shaperId = await upsertTenant("SHAPER Elite Fitness Studio", "shaper", { primary: "#f00000", secondary: "#0a0a0a" });
+  const shaperId = await upsertTenant("SHAPER Elite Fitness Studio", "shaper", { primary: "#f00000", secondary: "#0a0a0a" }, "SHP");
   const hqBranch = await upsertBranch(shaperId, "Indiranagar", { code: "IND", city: "Bengaluru", address_line: "100 Feet Road, Indiranagar", phone: "+91-80-4111-2200", opening_hours: "5:30am – 10:30pm" });
   const eastBranch = await upsertBranch(shaperId, "Whitefield", { code: "WHF", city: "Bengaluru", address_line: "ITPL Main Road, Whitefield", phone: "+91-80-4111-2201", opening_hours: "6:00am – 10:00pm" });
 
@@ -425,7 +428,7 @@ async function main() {
   }
 
   console.log("Seeding tenant: iron-house");
-  const ironHouseId = await upsertTenant("Iron House Strength Co.", "iron-house", { primary: "#2a78d6", secondary: "#0b0b0b" });
+  const ironHouseId = await upsertTenant("Iron House Strength Co.", "iron-house", { primary: "#2a78d6", secondary: "#0b0b0b" }, "IHS");
   await upsertStaff(ironHouseId, { email: "owner@iron-house.com", firstName: "Sam", lastName: "Okafor", role: "OWNER" });
   await upsertPlan(ironHouseId, "Strength Monthly", { price_cents: 249900, billing_cycle: "MONTHLY" });
 

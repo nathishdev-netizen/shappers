@@ -51,7 +51,7 @@ function MembersInner() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return members.filter((m) => {
-      if (q && !`${m.first_name} ${m.last_name} ${m.email} ${m.phone ?? ""}`.toLowerCase().includes(q)) return false;
+      if (q && !`${m.first_name} ${m.last_name} ${m.email} ${m.phone ?? ""} ${m.member_code ?? ""}`.toLowerCase().includes(q)) return false;
       if (branch && m.branch?.id !== branch) return false;
       switch (filter) {
         case "ACTIVE": return m.access.allowed;
@@ -84,7 +84,7 @@ function MembersInner() {
           <div className="flex flex-wrap items-center gap-3 border-b px-5 py-4" style={{ borderColor: "var(--hairline)" }}>
             <div className="relative min-w-[260px] flex-1">
               <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name, email or phone" className="field !pl-9" />
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name, member ID or phone" className="field !pl-9" />
             </div>
             <select className="field !w-auto" value={branch} onChange={(e) => setBranch(e.target.value)}>
               <option value="">All branches</option>
@@ -96,7 +96,7 @@ function MembersInner() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead><tr style={{ borderBottom: "1px solid var(--hairline)" }}>
-                <Th>Member</Th><Th>Branch</Th><Th>Plan</Th><Th>Last visit</Th><Th>Access until</Th><Th right>Fee</Th><Th>Access</Th><Th>Retention</Th><Th><span className="sr-only">Open</span></Th>
+                <Th>Member</Th><Th>ID</Th><Th>Branch</Th><Th>Plan</Th><Th>Last visit</Th><Th>Access until</Th><Th right>Fee</Th><Th>Access</Th><Th>Retention</Th><Th><span className="sr-only">Open</span></Th>
               </tr></thead>
               <tbody>
                 {filtered.map((m) => {
@@ -106,6 +106,7 @@ function MembersInner() {
                   return (
                     <tr key={m.id} className="table-row cursor-pointer" onClick={() => router.push(`/members/${m.id}`)}>
                       <Td><div className="flex items-center gap-3"><Avatar first={m.first_name} last={m.last_name} size={36} /><div className="min-w-0"><p className="truncate font-medium">{m.first_name} {m.last_name}</p><p className="truncate text-xs text-ink-muted">{m.email}</p></div></div></Td>
+                      <Td><span className="font-mono text-xs text-ink-secondary">{m.member_code ?? "—"}</span></Td>
                       <Td>{m.branch ? <span className="flex items-center gap-1.5 text-ink-secondary"><MapPin size={12} />{m.branch.name}</span> : <span className="text-ink-muted">—</span>}</Td>
                       <Td><span className="text-ink-secondary">{sub?.membership_plan?.name ?? "—"}</span></Td>
                       <Td>{since === null ? <span className="text-ink-muted">Never</span> : <span style={since >= 14 ? { color: "var(--status-critical)" } : undefined}>{since === 0 ? "Today" : `${since}d ago`}</span>}</Td>
@@ -117,7 +118,7 @@ function MembersInner() {
                     </tr>
                   );
                 })}
-                {!loading && filtered.length === 0 && <tr><td colSpan={9}><Empty>{query ? `No members match "${query}".` : "No members in this view."}</Empty></td></tr>}
+                {!loading && filtered.length === 0 && <tr><td colSpan={10}><Empty>{query ? `No members match "${query}".` : "No members in this view."}</Empty></td></tr>}
               </tbody>
             </table>
           </div>
