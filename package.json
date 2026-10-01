@@ -1,26 +1,36 @@
 {
   "name": "shappers-gym-platform",
-  "private": true,
   "version": "0.1.0",
-  "description": "White-label gym management platform — admin panel + member app (mobile/web) on an open-source stack",
+  "private": true,
   "scripts": {
-    "dev:api": "pnpm --filter api run start:dev",
-    "dev:admin": "pnpm --filter admin-web run dev",
-    "dev:mobile": "npm --prefix apps/mobile run start",
-    "seed": "pnpm --filter api run seed",
-    "infra:up": "docker compose -f infra/docker-compose.yml up -d",
-    "infra:down": "docker compose -f infra/docker-compose.yml down"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
   },
-  "engines": {
-    "node": ">=20"
+  "dependencies": {
+    "@supabase/ssr": "^0.7.0",
+    "@supabase/supabase-js": "^2.58.0",
+    "lucide-react": "^1.47.0",
+    "motion": "^13.4.2",
+    "next": "16.3.5",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "recharts": "^3.10.1",
+    "server-only": "^0.0.1"
   },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.5",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  },
+  "packageManager": "pnpm@10.33.3",
   "pnpm": {
-    "onlyBuiltDependencies": [
-      "@prisma/client",
-      "@prisma/engines",
-      "prisma",
-      "esbuild",
-      "unrs-resolver"
-    ]
+    "ignoredBuiltDependencies": ["sharp", "unrs-resolver"]
   }
 }
