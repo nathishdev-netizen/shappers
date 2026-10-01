@@ -38,6 +38,15 @@ function MembersInner() {
   }, []);
   useEffect(() => { setQuery(params.get("q") ?? ""); }, [params]);
 
+  // A search that exactly matches a member ID is someone who already knows
+  // who they're looking for — skip the filtered list and go straight there.
+  useEffect(() => {
+    const q = query.trim().toLowerCase();
+    if (!q || members.length === 0) return;
+    const exact = members.find((m) => m.member_code?.toLowerCase() === q);
+    if (exact) router.replace(`/members/${exact.id}`);
+  }, [query, members, router]);
+
   async function load() { setMembers(await listMembers(createClient())); setLoading(false); }
 
   const counts = useMemo(() => ({
