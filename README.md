@@ -7,17 +7,21 @@ club gets its own name and colours.
 ## Structure
 
 ```
-src/                Next.js App Router app — pages, components, Supabase client helpers
+src/                Next.js App Router app
+  app/               Pages, grouped under (app) for the authenticated shell
+  lib/insights/      Data-access + business logic (queries, RPC calls, computed fields)
+  lib/actions/       Server Actions for operations that need the service-role key
+  lib/supabase/      Client/server/admin Supabase client helpers + generated types
 supabase/
   migrations/        Schema, RLS policies, and business-logic RPCs (SQL)
-  seed.mjs           Provisions demo tenants + staff as real Supabase Auth users
-apps/api/            Old NestJS/Prisma backend — kept temporarily as a migration
-                      reference while its logic is ported to Supabase RPCs; being retired
+  seed.mjs           Provisions demo tenants, staff, and a full demo dataset
 ```
 
 There is no separate API service and no mobile app — a previous version of this project
-had both (NestJS API, Expo/React Native app); the mobile app was a feature-for-feature
-duplicate of the web admin panel, so the installable PWA replaces it.
+had both (a NestJS API, an Expo/React Native app). The NestJS API's logic was ported into
+`src/lib/insights/` and `supabase/migrations/` (as RLS policies and RPCs) and the service
+itself retired; the mobile app was a feature-for-feature duplicate of the web admin panel,
+so the installable PWA replaces it.
 
 ## Prerequisites
 
